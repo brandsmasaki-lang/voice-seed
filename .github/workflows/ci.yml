@@ -1,0 +1,27 @@
+name: Build and test
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  macos:
+    runs-on: macos-26
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Check public metadata
+        run: python3 scripts/check-release.py
+      - name: Run pure logic tests
+        run: bash scripts/test.sh
+      - name: Build local app
+        run: bash scripts/build.sh
+      - name: Check clean source export
+        run: python3 scripts/export-source.py
+      # No certificates, notarization credentials or ad-hoc-signed public downloads in PR CI.

@@ -1,0 +1,14 @@
+.build/
+dist/
+.DS_Store
+qa/*.aiff
+qa/*.caf
+qa/*.wav
+*.p12
+*.p8
+*.mobileprovision
+*.provisionprofile
+.env
+.env.*
+!.env.example
+__pycache__/

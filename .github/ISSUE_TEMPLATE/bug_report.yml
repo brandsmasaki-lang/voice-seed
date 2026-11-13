@@ -1,0 +1,27 @@
+name: 不具合報告
+description: 架空の文章で再現できる手順を教えてください。
+body:
+  - type: markdown
+    attributes:
+      value: 音声・個人辞書・機密情報・パスワードは添付しないでください。認証情報を含むログも不要です。
+  - type: input
+    id: version
+    attributes:
+      label: アプリのバージョン・ビルド
+      description: 「アプリについて」に表示されます。
+    validations:
+      required: true
+  - type: input
+    id: environment
+    attributes:
+      label: Macのチップ・macOSバージョン
+      placeholder: M1 / macOS 26.x
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: 再現手順・期待した結果・実際の結果
+      description: 入力先のアプリ名、Fn検知・自動貼り付け許可の状態、Apple Intelligence整形のオン／オフも分かる範囲で記載してください。
+    validations:
+      required: true

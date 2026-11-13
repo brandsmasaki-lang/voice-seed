@@ -1,0 +1,6 @@
+!!ATOK_TANGO_TEXT_HEADER_1
+よみ	単語	品詞
+ぷろんぷとばんく	PromptBank	名詞
+こえのたね	こえのたね	名詞
+はし	橋	名詞
+はし	箸	名詞
