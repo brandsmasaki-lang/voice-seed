@@ -12,7 +12,8 @@ import Foundation
             if failInstallation { throw VoiceError.message("テスト用の通信失敗") }
             installed = true
         })
-        let model = AppModel(speechModel: service)
+        var windowPresentations = 0
+        let model = AppModel(speechModel: service, windowPresenter: { windowPresentations += 1 })
         defer { model.shutdown() }
         var checks = 0
         func check(_ value: Bool, _ message: String) { precondition(value, message); checks += 1 }
@@ -22,10 +23,17 @@ import Foundation
         check(model.selectedTab == "入力", "Regression: Fn with a missing model must not navigate to settings")
         check(model.notice.contains("日本語モデルを準備"), "The same screen names an actionable button")
         check(model.phase == .idle, "Missing assets never open the microphone")
+        check(windowPresentations == 0 && model.lastResultPresentation == .nonactivatingNotice, "Fn setup failure cannot activate the app")
+        for reason in ["貼り付け許可なし", "入力先が変わった", "文章整形の失敗", "入力する文字なし"] {
+            model.notice = reason; model.presentRecordingResult()
+            check(windowPresentations == 0 && model.backgroundNotice == reason, "Background failure retains a notice without activating the app")
+        }
         model.fnReleased(); model.fnPressed(); model.fnReleased()
         check(model.selectedTab == "入力" && model.phase == .idle, "Repeated press/release does not create a settings loop")
         model.toggle()
         check(model.selectedTab == "入力" && model.phase == .idle, "Button recording uses the same model preparation screen")
+        check(windowPresentations == 1 && model.lastResultPresentation == .mainWindow, "Only explicit in-app recording may request the window")
+        check(RecordingPhase.recording.title == "聞き取り中", "Requested listening label")
         model.installModel()
         let deadline = Date().addingTimeInterval(5)
         while model.installing && Date() < deadline { await Task.yield() }

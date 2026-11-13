@@ -89,6 +89,8 @@ import ApplicationServices
 
 @MainActor final class RecordingHUD {
     private let panel: NSPanel
+    private var noticeVisible = false
+    private var noticeTimer: Timer?
     init(model: AppModel) {
         panel = NSPanel(contentRect: NSRect(x: 0, y: 0, width: 280, height: 66),
                         styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
@@ -99,33 +101,57 @@ import ApplicationServices
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         panel.contentView = NSHostingView(rootView: HUDView(model: model))
     }
-    func show() {
+    private func display(width: CGFloat, height: CGFloat) {
+        panel.setContentSize(NSSize(width: width, height: height))
         if let screen = NSScreen.main {
-            panel.setFrameOrigin(NSPoint(x: screen.visibleFrame.midX - 140, y: screen.visibleFrame.minY + 32))
+            panel.setFrameOrigin(NSPoint(x: screen.visibleFrame.midX - width / 2, y: screen.visibleFrame.minY + 32))
         }
         panel.orderFrontRegardless()
     }
-    func hide() { panel.orderOut(nil) }
+    func show() {
+        noticeTimer?.invalidate(); noticeTimer = nil; noticeVisible = false
+        display(width: 280, height: 66)
+    }
+    func showNotice() {
+        noticeTimer?.invalidate(); noticeVisible = true
+        display(width: 380, height: 100)
+        noticeTimer = Timer.scheduledTimer(withTimeInterval: 6, repeats: false) { [weak self] _ in
+            MainActor.assumeIsolated { self?.hide() }
+        }
+    }
+    func hideRecording() { if !noticeVisible { hide() } }
+    func hide() { noticeTimer?.invalidate(); noticeTimer = nil; noticeVisible = false; panel.orderOut(nil) }
 }
 
 struct HUDView: View {
     @ObservedObject var model: AppModel
     var body: some View {
-        HStack(spacing: 12) {
-            if model.phase == .recording {
-                Image(systemName: "waveform").foregroundStyle(Color.mint)
-            } else { ProgressView().controlSize(.small) }
-            VStack(alignment: .leading, spacing: 3) {
-                Text(model.phase == .recording ? "録音中  \(model.duration)" : model.phase.title).font(.system(size: 13, weight: .semibold))
-                Text(model.phase == .recording ? (model.recordingFromFn ? "Fn を離すと入力します" : "\(model.shortcutLabel) で終了") : "Macの中で処理しています").font(.system(size: 10)).foregroundStyle(.secondary)
-            }
-            Spacer()
-            if model.phase == .recording {
-                Button { model.stop() } label: { Image(systemName: "stop.fill").font(.system(size: 12)) }
-                    .buttonStyle(.borderless).help("録音を終了")
+        Group {
+            if !model.backgroundNotice.isEmpty {
+                HStack(alignment: .top, spacing: 10) {
+                    Image(systemName: "info.circle").foregroundStyle(Color.mint)
+                    Text(model.backgroundNotice).font(.system(size: 11)).lineLimit(3).frame(maxWidth: .infinity, alignment: .leading)
+                    Button("開く") { model.hud?.hide(); model.selectedTab = "入力"; model.showWindow() }
+                        .buttonStyle(.borderless).font(.system(size: 11))
+                    Button { model.hud?.hide() } label: { Image(systemName: "xmark").font(.system(size: 10)) }
+                        .buttonStyle(.borderless).help("閉じる")
+                }.padding(14).frame(width: 380, height: 100)
+            } else {
+                HStack(spacing: 12) {
+                    if model.phase == .recording { Image(systemName: "waveform").foregroundStyle(Color.mint) }
+                    else { ProgressView().controlSize(.small) }
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text(model.phase == .recording ? "聞き取り中  \(model.duration)" : model.phase.title).font(.system(size: 13, weight: .semibold))
+                        Text(model.phase == .recording ? (model.recordingFromFn ? "Fn を離すと確定します" : "\(model.shortcutLabel) で終了") : "Macの中で処理しています").font(.system(size: 10)).foregroundStyle(.secondary)
+                    }
+                    Spacer()
+                    if model.phase == .recording {
+                        Button { model.stop() } label: { Image(systemName: "stop.fill").font(.system(size: 12)) }
+                            .buttonStyle(.borderless).help("聞き取りを終了")
+                    }
+                }.padding(16).frame(width: 280, height: 66)
             }
         }
-        .padding(16).frame(width: 280, height: 66)
         .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 20))
         .overlay(RoundedRectangle(cornerRadius: 20).stroke(.white.opacity(0.15)))
     }

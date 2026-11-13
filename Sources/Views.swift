@@ -19,7 +19,7 @@ struct MainView: View {
             sidebar
             VStack(alignment: .leading, spacing: 0) {
                 HStack {
-                    Text(model.selectedTab == "入力" ? "VOICE WORKSPACE" : model.selectedTab == "単語辞書" ? "YOUR VOCABULARY" : model.selectedTab == "アプリについて" ? "ABOUT & SUPPORT" : "PREFERENCES")
+                    Text(model.selectedTab == "入力" ? "VOICE WORKSPACE" : model.selectedTab == "入力履歴" ? "RECENT INPUTS" : model.selectedTab == "統計" ? "YOUR ACTIVITY" : model.selectedTab == "単語辞書" ? "YOUR VOCABULARY" : model.selectedTab == "アプリについて" ? "ABOUT & SUPPORT" : "PREFERENCES")
                         .font(.system(size: 10, weight: .semibold, design: .monospaced)).tracking(2).foregroundStyle(.secondary)
                     Spacer()
                     if publicInfo.updateAvailable {
@@ -31,6 +31,8 @@ struct MainView: View {
                 Group {
                     switch model.selectedTab {
                     case "単語辞書": DictionaryView(model: model)
+                    case "入力履歴": RecentInputsView(model: model)
+                    case "統計": UsageView(model: model)
                     case "設定": SettingsView(model: model)
                     case "アプリについて": AboutView(model: model, publicInfo: publicInfo, updater: updater)
                     default: input
@@ -63,7 +65,7 @@ struct MainView: View {
                 Text("こえのたね").font(.system(size: 19, weight: .bold))
             }.padding(.top, 32).padding(.bottom, 8)
             Text("ことばを、もっと自由に。").font(.system(size: 10)).foregroundStyle(.secondary).padding(.bottom, 36)
-            ForEach(Array(zip(["入力", "単語辞書", "設定", "アプリについて"], ["mic", "character.book.closed", "slider.horizontal.3", "info.circle"])), id: \.0) { title, icon in
+            ForEach(Array(zip(["入力", "入力履歴", "統計", "単語辞書", "設定", "アプリについて"], ["mic", "clock.arrow.circlepath", "chart.bar", "character.book.closed", "slider.horizontal.3", "info.circle"])), id: \.0) { title, icon in
                 Button { model.selectedTab = title } label: {
                     HStack(spacing: 12) {
                         Image(systemName: icon).frame(width: 18)
@@ -167,7 +169,9 @@ struct MainView: View {
                     .disabled(model.output.isEmpty || model.busy)
             }.padding(.top, 14)
             Text("フィラーはルールで除去。文章整形をオンにすると、Apple Intelligenceが句読点・改行も整えます。")
-                .font(.system(size: 10)).foregroundStyle(.secondary).frame(maxWidth: .infinity, alignment: .leading).padding(.top, 7)
+                    .font(.system(size: 10)).foregroundStyle(.secondary).frame(maxWidth: .infinity, alignment: .leading).padding(.top, 7)
+            Button("最近の入力履歴（\(model.activity.history.count)件）を開く") { model.selectedTab = "入力履歴" }
+                .font(.system(size: 11)).buttonStyle(.plain).foregroundStyle(green).padding(.top, 9)
         }.padding(.horizontal, 32).padding(.bottom, 22)
     }
 }
@@ -470,7 +474,7 @@ struct SettingsView: View {
                     Button("アクセシビリティの許可を設定") { model.requestAccessibility() }
                 }
                 card("データについて", icon: "lock.shield") {
-                    Text("マイク音声はメモリ上で認識し、録音ファイルは保存しません。認識結果は履歴に保存しません。単語辞書と設定はこのMacに保存します。旧版で残った一時録音は次回起動時に削除します。")
+                    Text("マイク音声はメモリ上で認識し、録音ファイルは保存しません。入力履歴は直近5件をこのMacに保存し、履歴画面で保存のオン・オフと削除ができます。統計は文字数・回数・所要時間・開始時のアプリ名をこのMacに保存します。単語辞書と設定もこのMacに保存します。")
                         .font(.system(size: 11)).foregroundStyle(.secondary).lineSpacing(5)
                     Text("録音は1回5分まで。処理中は新しい録音を開始できません。")
                         .font(.system(size: 10)).foregroundStyle(.secondary)
@@ -484,5 +488,96 @@ struct SettingsView: View {
             Label(title, systemImage: icon).font(.system(size: 12, weight: .semibold)).foregroundStyle(green)
             content()
         }.padding(19).frame(maxWidth: .infinity, alignment: .leading).background(.white, in: RoundedRectangle(cornerRadius: 14))
+    }
+}
+
+struct RecentInputsView: View {
+    @ObservedObject var model: AppModel
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 16) {
+                HStack {
+                    Text("最近の入力").font(.system(size: 25, weight: .semibold))
+                    Spacer()
+                    Button("履歴を削除") { model.confirmingHistoryDeletion = true }.disabled(model.activity.history.isEmpty)
+                }
+                Text("直近5件をこのMacに保存します。アプリを開き直してもコピーできます。")
+                    .font(.system(size: 12)).foregroundStyle(.secondary)
+                Toggle("入力履歴をこのMacに保存する", isOn: Binding(get: { model.activity.savesHistory }, set: model.setHistoryEnabled))
+                    .font(.system(size: 12))
+                if model.activity.history.isEmpty {
+                    Text("音声入力すると、ここに履歴が表示されます。")
+                        .font(.system(size: 13)).foregroundStyle(.secondary).padding(.vertical, 30)
+                }
+                ForEach(model.activity.history) { entry in
+                    VStack(alignment: .leading, spacing: 10) {
+                        HStack {
+                            Text(entry.createdAt.formatted(date: .abbreviated, time: .shortened))
+                            Text(entry.application)
+                            Spacer()
+                            Button("コピー") { model.copyHistory(entry) }
+                                .accessibilityLabel("\(entry.createdAt.formatted(date: .omitted, time: .shortened))の履歴をコピー")
+                        }.font(.system(size: 11)).foregroundStyle(.secondary)
+                        Text(entry.text).font(.system(size: 14)).lineSpacing(5).textSelection(.enabled)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }.padding(17).background(.white, in: RoundedRectangle(cornerRadius: 13))
+                }
+                Text("保存をオフにしても既存の履歴は残ります。不要な履歴は「履歴を削除」で消せます。音声ファイル自体は保存しません。")
+                    .font(.system(size: 10)).foregroundStyle(.secondary)
+            }.padding(.horizontal, 32).padding(.bottom, 24)
+        }.confirmationDialog("入力履歴をすべて削除しますか？", isPresented: $model.confirmingHistoryDeletion) {
+            Button("5件までの入力履歴を削除", role: .destructive) { model.clearHistory() }
+        } message: { Text("辞書・設定・統計は残ります。") }
+    }
+}
+
+struct UsageView: View {
+    @ObservedObject var model: AppModel
+    private var usage: UsageTotals { model.activity.usage }
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 20) {
+                Text("あなたの音声入力").font(.system(size: 25, weight: .semibold))
+                Text("声から作ったことばと、手入力との時間の比較。")
+                    .font(.system(size: 12)).foregroundStyle(.secondary)
+                VStack(alignment: .leading, spacing: 15) {
+                    Text("累計入力文字数").font(.system(size: 12)).foregroundStyle(.secondary)
+                    Text(usage.characters.formatted()).font(.system(size: 48, weight: .medium, design: .rounded))
+                    Divider()
+                    Text("推定短縮時間").font(.system(size: 12)).foregroundStyle(.secondary)
+                    Text(duration(usage.estimatedSavedSeconds(typingCharactersPerMinute: model.activity.typingCharactersPerMinute)))
+                        .font(.system(size: 31, weight: .semibold)).foregroundStyle(green)
+                }.padding(24).frame(maxWidth: .infinity, alignment: .leading).background(.white, in: RoundedRectangle(cornerRadius: 16))
+                LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], alignment: .leading, spacing: 12) {
+                    metric("利用回数", "\(usage.sessions)回")
+                    metric("連続利用", "\(usage.currentStreak(on: Date()))日")
+                    metric("音声入力の速度", "\(Int(usage.charactersPerMinute.rounded()))文字/分")
+                    metric("開始時のアプリ（最多）", usage.topApplication ?? "まだありません")
+                }
+                VStack(alignment: .leading, spacing: 10) {
+                    Stepper("手入力の速度：\(model.activity.typingCharactersPerMinute)文字/分", value: Binding(get: { model.activity.typingCharactersPerMinute }, set: model.setTypingSpeed), in: 20...1000, step: 10)
+                        .font(.system(size: 12))
+                    Text("初期値の100文字/分は計算用の仮の値です。ご自身の速度に変更してください。推定短縮時間＝文字数÷手入力速度－音声入力にかかった時間。修正やコピーの時間は含みません。")
+                        .font(.system(size: 10)).foregroundStyle(.secondary).lineSpacing(4)
+                    Toggle("利用統計をこのMacに保存する", isOn: Binding(get: { model.activity.collectsUsage }, set: model.setUsageEnabled))
+                        .font(.system(size: 12))
+                    Button("統計をリセット") { model.confirmingUsageReset = true }.font(.system(size: 11))
+                }
+                Text("文字数・回数・所要時間・開始時のアプリ名のみをMac内で集計します。音声ファイルの取り込みは、速度と短縮時間に含めません。")
+                    .font(.system(size: 10)).foregroundStyle(.secondary)
+            }.padding(.horizontal, 32).padding(.bottom, 24)
+        }.confirmationDialog("利用統計をリセットしますか？", isPresented: $model.confirmingUsageReset) {
+            Button("統計だけをリセット", role: .destructive) { model.clearUsage() }
+        } message: { Text("入力履歴・辞書・設定は残ります。") }
+    }
+    private func metric(_ title: String, _ value: String) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(title).font(.system(size: 10)).foregroundStyle(.secondary)
+            Text(value).font(.system(size: 17, weight: .semibold))
+        }.padding(16).frame(maxWidth: .infinity, alignment: .leading).background(.white, in: RoundedRectangle(cornerRadius: 12))
+    }
+    private func duration(_ seconds: Double) -> String {
+        let minutes = Int(seconds / 60)
+        return minutes >= 60 ? "\(minutes / 60)時間\(minutes % 60)分" : minutes > 0 ? "\(minutes)分\(Int(seconds) % 60)秒" : "\(Int(seconds))秒"
     }
 }

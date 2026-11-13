@@ -11,7 +11,7 @@ enum RecordingPhase: String {
         switch self {
         case .idle: return "話すだけで、ことばになる。"
         case .preparing: return "マイクを準備しています"
-        case .recording: return "聞いています。"
+        case .recording: return "聞き取り中"
         case .transcribing: return "ことばに変えています"
         case .refining: return "文章を整えています"
         }
@@ -25,6 +25,10 @@ enum RecordingPhase: String {
     @Published var output = ""
     @Published var original = ""
     @Published var notice = ""
+    @Published var backgroundNotice = ""
+    @Published var confirmingHistoryDeletion = false
+    @Published var confirmingUsageReset = false
+    @Published private(set) var activity: LocalActivitySnapshot
     @Published var modelStatus = "日本語モデルを確認中…"
     @Published var level: Double = 0
     @Published var seconds = 0
@@ -79,6 +83,11 @@ enum RecordingPhase: String {
     private var startedAt = Date()
     private var sessionID = UUID()
     private let speechModel: SpeechModelAccess
+    private let activityStore: LocalActivityStore
+    private let windowPresenter: (() -> Void)?
+    private var resultPresentation = RecordingPresentation.mainWindow
+    private(set) var lastResultPresentation: RecordingPresentation?
+    private var inputRequestedAt = Date()
 
     var busy: Bool { phase != .idle || updater.sessionInProgress }
     var displayedOutput: String { busy && !livePreview.isEmpty ? livePreview : output }
@@ -120,8 +129,9 @@ enum RecordingPhase: String {
                                     pasteAllowed: pasteReady, autoPasteEnabled: autoPaste) {
         case .ignore: return
         case .prepareSpeechModel:
+            resultPresentation = .nonactivatingNotice
             notice = "まだ録音を開始できません。入力画面の「日本語モデルを準備」を押してください。"
-            selectedTab = "入力"; showWindow(); return
+            selectedTab = "入力"; presentRecordingResult(); return
         case .record:
             break
         }
@@ -149,8 +159,11 @@ enum RecordingPhase: String {
         self.init(speechModel: .live)
     }
 
-    init(speechModel: SpeechModelAccess) {
+    init(speechModel: SpeechModelAccess, activityStore: LocalActivityStore = LocalActivityStore(), windowPresenter: (() -> Void)? = nil) {
         self.speechModel = speechModel
+        self.activityStore = activityStore
+        self.activity = activityStore.snapshot
+        self.windowPresenter = windowPresenter
         super.init()
         if let data = UserDefaults.standard.data(forKey: "dictionary"),
            let entries = try? JSONDecoder().decode([DictionaryEntry].self, from: data) {
@@ -187,7 +200,8 @@ enum RecordingPhase: String {
     func toggle(fromShortcut: Bool = false) {
         if phase == .recording { stop(); return }
         guard !busy, !installing else { return }
-        guard modelReady else { selectedTab = "入力"; notice = "入力画面の「日本語モデルを準備」を押してください。"; showWindow(); return }
+        resultPresentation = .forRecording(startedFromGlobalKey: fromShortcut)
+        guard modelReady else { selectedTab = "入力"; notice = "入力画面の「日本語モデルを準備」を押してください。"; presentRecordingResult(); return }
         refreshInputPermissions()
         target = fromShortcut ? NSWorkspace.shared.frontmostApplication : nil
         focusedAtStart = target.flatMap { Self.focusedElement(in: $0) }
@@ -197,6 +211,8 @@ enum RecordingPhase: String {
             ? "文字起こしができました。自動貼り付けの許可がないため、ここに表示しています。コピーして入力先へ貼り付けるか、「貼り付けを許可する」を押してください。"
             : "文字起こしができました。内容を確認してコピーできます。"
         phase = .preparing
+        inputRequestedAt = Date()
+        backgroundNotice = ""; hud?.hide()
         notice = ""
         livePreview = ""
         lastFinalizeSeconds = nil
@@ -212,7 +228,7 @@ enum RecordingPhase: String {
                 holdRecording.reset(); recordingFromFn = false
                 notice = "マイクが許可されていません。「システム設定 → プライバシーとセキュリティ → マイク」でこえのたねを許可してください。"
                 selectedTab = "入力"
-                showWindow()
+                presentRecordingResult()
                 return
             }
             do {
@@ -268,8 +284,13 @@ enum RecordingPhase: String {
         let cleanFillers = removeFillers
         let shouldPaste = pasteThisRecording && autoPaste
         let destination = target
+        let requestStarted = inputRequestedAt
         work = Task {
-            defer { liveSession = nil; livePreview = ""; phase = .idle; hud?.hide(); work = nil; prewarm() }
+            var completedText: String?
+            defer {
+                if let completedText { recordActivity(text: completedText, application: destination?.localizedName ?? "こえのたね", inputSeconds: Date().timeIntervalSince(requestStarted)) }
+                liveSession = nil; livePreview = ""; phase = .idle; hud?.hideRecording(); work = nil; prewarm()
+            }
             do {
                 let recognized = try await session.finish()
                 lastFinalizeSeconds = Date().timeIntervalSince(released)
@@ -278,7 +299,7 @@ enum RecordingPhase: String {
                 output = TextPipeline.process(recognized, entries: entries, removeFillers: cleanFillers)
                 if output.isEmpty {
                     notice = "フィラーだけだったため、貼り付ける文章はありません。元の認識結果は確認できます。"
-                    showWindow()
+                    presentRecordingResult()
                     return
                 }
                 if useLLM {
@@ -287,15 +308,16 @@ enum RecordingPhase: String {
                     catch { notice = "文章整形: \(error.localizedDescription) 認識結果を確認してください。" }
                 }
                 try Task.checkCancellation()
+                completedText = output
                 if shouldPaste && notice.isEmpty {
                     await paste(into: destination)
                 } else {
                     if notice.isEmpty { notice = displayOnlyReason }
                     selectedTab = "入力"
-                    showWindow()
+                    presentRecordingResult()
                 }
             } catch is CancellationError { notice = "録音をキャンセルしました。" }
-            catch { notice = error.localizedDescription; showWindow() }
+            catch { notice = error.localizedDescription; presentRecordingResult() }
         }
     }
 
@@ -318,7 +340,7 @@ enum RecordingPhase: String {
         holdRecording.reset(); recordingFromFn = false
         notice = error.localizedDescription
         selectedTab = "入力"
-        showWindow()
+        presentRecordingResult()
         prewarm()
     }
 
@@ -335,33 +357,26 @@ enum RecordingPhase: String {
 
     private func paste(into destination: NSRunningApplication?) async {
         guard let destination, !destination.isTerminated else {
-            notice = "入力先が見つかりません。内容を確認してコピーしてください。"; showWindow(); return
+            notice = "入力先が見つかりません。結果はアプリ内に残しています。"; presentRecordingResult(); return
         }
         guard AXIsProcessTrusted() else {
-            notice = "自動貼り付けにはアクセシビリティの許可が必要です。「設定」から許可するか、コピーして貼り付けてください。"; showWindow(); return
+            notice = "自動貼り付けにはアクセシビリティの許可が必要です。結果はアプリ内に残しています。"; presentRecordingResult(); return
         }
-        if NSWorkspace.shared.frontmostApplication?.processIdentifier != destination.processIdentifier {
-            destination.activate()
-            for _ in 0..<14 {
-                if NSWorkspace.shared.frontmostApplication?.processIdentifier == destination.processIdentifier { break }
-                try? await Task.sleep(for: .milliseconds(25))
-            }
-        }
-        guard NSWorkspace.shared.frontmostApplication?.processIdentifier == destination.processIdentifier else {
-            notice = "入力先を確認できませんでした。内容を確認してコピーしてください。"; showWindow(); return
+        guard RecordingPresentation.canPaste(startingApplication: destination.processIdentifier, currentApplication: NSWorkspace.shared.frontmostApplication?.processIdentifier) else {
+            notice = "入力先が切り替わったため貼り付けませんでした。結果はアプリ内に残しています。"; presentRecordingResult(); return
         }
         guard let initial = focusedAtStart, let current = Self.focusedElement(in: destination), CFEqual(initial, current) else {
-            notice = "録音開始時と同じ入力欄であることを確認できませんでした。内容を確認してコピーしてください。"; showWindow(); return
+            notice = "入力欄が変わったため貼り付けませんでした。結果はアプリ内に残しています。"; presentRecordingResult(); return
         }
         var subrole: CFTypeRef?
         AXUIElementCopyAttributeValue(current, kAXSubroleAttribute as CFString, &subrole)
         guard subrole as? String != kAXSecureTextFieldSubrole else {
-            notice = "パスワード欄には自動で貼り付けません。"; showWindow(); return
+            notice = "パスワード欄には自動で貼り付けません。"; presentRecordingResult(); return
         }
         guard let source = CGEventSource(stateID: .hidSystemState),
               let down = CGEvent(keyboardEventSource: source, virtualKey: 9, keyDown: true),
               let up = CGEvent(keyboardEventSource: source, virtualKey: 9, keyDown: false) else {
-            notice = "貼り付け操作を作成できませんでした。コピーして貼り付けてください。"; showWindow(); return
+            notice = "貼り付け操作を作成できませんでした。結果はアプリ内に残しています。"; presentRecordingResult(); return
         }
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(output, forType: .string)
@@ -398,9 +413,36 @@ enum RecordingPhase: String {
     }
 
     func showWindow() {
+        if let windowPresenter { windowPresenter(); return }
         guard let application = NSApp else { return }
         application.activate(ignoringOtherApps: true)
         application.windows.first(where: { $0.identifier?.rawValue == "main" || $0.title == "こえのたね" })?.makeKeyAndOrderFront(nil)
+    }
+
+    /// Global dictation must not activate either this app or a previous input app.
+    func presentRecordingResult() {
+        lastResultPresentation = resultPresentation
+        if resultPresentation == .nonactivatingNotice {
+            backgroundNotice = notice
+            hud?.showNotice()
+        } else { showWindow() }
+    }
+
+    func recordActivity(text: String, application: String, inputSeconds: Double?) {
+        activityStore.record(text: text, application: application, inputSeconds: inputSeconds)
+        activity = activityStore.snapshot
+    }
+    func setHistoryEnabled(_ enabled: Bool) { activityStore.setHistoryEnabled(enabled); activity = activityStore.snapshot }
+    func setUsageEnabled(_ enabled: Bool) { activityStore.setUsageEnabled(enabled); activity = activityStore.snapshot }
+    func setTypingSpeed(_ speed: Int) { activityStore.setTypingSpeed(speed); activity = activityStore.snapshot }
+    func clearHistory() { activityStore.clearHistory(); activity = activityStore.snapshot }
+    func clearUsage() { activityStore.clearUsage(); activity = activityStore.snapshot }
+    func copyHistory(_ entry: RecentInput) {
+        NSPasteboard.general.clearContents()
+        let written = NSPasteboard.general.setString(entry.text, forType: .string)
+        notice = written && NSPasteboard.general.string(forType: .string) == entry.text
+            ? "履歴をコピーしました。入力先で ⌘V を押して貼り付けてください。"
+            : "コピーできませんでした。履歴の文章を選択してコピーしてください。"
     }
 
     func importAudio() {
@@ -432,6 +474,7 @@ enum RecordingPhase: String {
                     do { output = try await SpeechService.refine(output) }
                     catch { notice = "文章整形: \(error.localizedDescription)" }
                 }
+                recordActivity(text: output, application: "音声ファイル", inputSeconds: nil)
             } catch { notice = error.localizedDescription }
         }
     }

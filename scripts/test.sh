@@ -25,4 +25,7 @@ python3 Tests/PublicSourceTests.py
 swiftc -target arm64-apple-macosx26.0 -module-cache-path "$PWD/.build/module-cache" \
     -parse-as-library Sources/PublicAppInfo.swift Tests/PublicAppInfoTests.swift -o .build/PublicAppInfoTests
 .build/PublicAppInfoTests
+swiftc -target arm64-apple-macosx26.0 -module-cache-path "$PWD/.build/module-cache" \
+    -parse-as-library Sources/LocalActivity.swift Sources/RecordingPresentation.swift Tests/LocalActivityTests.swift -o .build/LocalActivityTests
+.build/LocalActivityTests
 bash scripts/test-startup.sh
