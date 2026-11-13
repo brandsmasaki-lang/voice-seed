@@ -21,7 +21,7 @@
 1. Info.plistのバージョンとビルド番号を上げ、変更内容と検証結果を記録します。
 2. `bash scripts/test.sh`、`bash scripts/build.sh`、`bash scripts/package-app.sh` を実行します。
 3. `python3 scripts/generate-appcast.py` で更新ZIPのEdDSA署名を検証し、`dist/appcast.xml` を作ります。秘密鍵は専用のキーチェーン項目に保持し、Gitへ保存しません。
-4. ソース・アプリZIP・SHA-256をGitHub Releasesへ公開し、実際にダウンロードできることとチェックサムを確認します。
+4. ソース・バージョン固有のアプリZIP・固定名のvoice-seed-macos-arm64.zip・SHA-256をGitHub Releasesへ公開し、実際にダウンロードできることとチェックサムを確認します。
 5. 公開LP側へappcast.xmlを反映し、app-info.jsonのlatestを公開済みの版と一致させます。配備後、アプリの更新通知・更新ボタン・インストール・再起動を確認します。
 
 EdDSAは更新ファイルを認証する署名です。AppleのDeveloper ID署名とは別のものです。法人名のDeveloper ID署名には、法人としてのApple Developer Program登録と証明書が必要です。
