@@ -2,14 +2,14 @@
 
 ## ソース公開とアプリ配布を分ける
 
-ソースコードはMITライセンスで公開します。一般向けのダウンロード用アプリには、同じ開発元のDeveloper ID Application署名・Hardened Runtime・Appleの公証・公証チケットを付けます。開発用のアドホック署名版を一般向け配布版として案内しないでください。
+ソースコードはMITライセンスで公開します。正式な署名・公証版には、同じ開発元のDeveloper ID Application署名・Hardened Runtime・Apple公証・公証チケットを付けます。これとは別に、利用者の指示に基づき、初回起動の個別許可手順を同梱してアプリを配布します。
 
 参考：[Apple Developer ID](https://developer.apple.com/developer-id/) / [公証](https://developer.apple.com/documentation/security/notarizing-macos-software-before-distribution)
 
 ## 公開用ソース
 
 1. `Resources/Info.plist` のバージョンとビルド番号、`CHANGELOG.md` を更新します。
-2. `Resources/AppLinks.plist` の4つのURLを確認します。画面のバージョンはInfo.plistから表示されます。
+2. `Resources/PublicAppInfo.json` の5つのURLを確認します。画面のバージョンはInfo.plistから表示されます。
 3. `python3 scripts/check-release.py`、`bash scripts/test.sh`、`bash scripts/build.sh` を実行します。
 4. `python3 scripts/export-source.py` で `dist/voice-seed-バージョン-source.zip` を作成します。
 5. ZIPの全ファイルと `SOURCE_MANIFEST.json` を確認します。公開内容は `scripts/public_source.py` の明示的な一覧に限ります。個人の設定・辞書・音声・開発用qa・既存のGit履歴は含みません。
@@ -17,6 +17,12 @@
 7. GitHub Actionsの成功を確認します。CIは `macos-26` のarm64ランナーで、純粋ロジックのテスト・ビルド・ソース書き出しを実施します。マイク・Fn・他アプリへの入力は実機検証です。
 
 CIのチェックは公開用ファイル一覧・一部の偶発的な認証情報・ローカルパスを確認しますが、秘密情報の不在を保証するものではありません。公開前の内容確認は必須です。
+
+## 現在のアプリ配布
+
+`bash scripts/build.sh` の後に `bash scripts/package-app.sh` を実行します。ZIPにはアプリ本体だけを入れ、初回起動・Fn許可の説明はLPとdocs/INSTALL.mdで案内します。`docs/INSTALL.md` はApple公式のアプリ単位の許可手順を説明し、システム全体のセキュリティ無効化は案内しません。通常のGitHub CIでのビルド成功と、別のMacでの実操作検証は分けて記録してください。
+
+公式LPはLINEの案内を入口にし、LINEHarnessの専用キーワード応答からアプリのダウンロードURLを届けます。
 
 ## 署名・公証済みアプリ
 
@@ -51,7 +57,7 @@ bash scripts/release.sh
 - Apple Intelligenceの利用不可／オフでも音声認識とルールのフィラー除去が動く。
 - 架空の辞書の取り込み確認・追加・重複の扱いを確認する。実際の個人辞書は公開しない。
 - 元と異なる入力欄やパスワード欄へ自動貼り付けしない。Enterなどの送信操作をしない。
-- 全4リンクが意図した公開先を開く。バージョン・ライセンス・プライバシー文が正しい。
+- 全5リンクが意図した公開先を開く。バージョン・ライセンス・プライバシー文が正しい。
 - 既存版からの更新で辞書と設定が残る。
 
 完了した環境・バージョン・結果を `docs/VALIDATION.md` へ記載します。未実施を成功として扱わないでください。

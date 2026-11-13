@@ -1,29 +1,23 @@
-# LINEとGitHubからの配布導線
+# こえのたねの配布導線
 
-## 提案する構成
+利用者の指定により、公式LPのダウンロードボタンはAIのたねシリーズ公式LINE（@833ciyeu）へつなぎます。LINEHarnessで「こえのたね」の専用キーワード応答を用意し、ダウンロードURLと初期設定の説明を届けます。既存の相談案内・他アプリの応答は保持します。設定完了と実際の受信確認は別々に記録します。
 
-- GitHub：MITライセンスのソースコード、使い方、更新履歴、不具合報告。公証済み版が完成したらReleasesへアプリを掲載。
-- LINE：友だち追加後の案内で、同じダウンロード先と初期設定の手順を届ける。AI導入・開発相談の窓口として利用。
-- アプリ：「アプリについて」から運営元、服部雅樹のX、相談LINE、GitHubを開く。
+LP：https://ai-no-tane.com/lp/koenotane/
+LINE：https://line.me/R/ti/p/%40833ciyeu
+ソース：https://github.com/brandsmasaki-lang/voice-seed
 
-GitHubで公開するソースやMITライセンスの再配布を、LINE登録で制限することはできません。広く使ってもらうため、GitHubの直接入手とLINEでの案内を併用する案です。LINE登録必須の配布サイトや友だち追加後の自動返信設定は、まだ実装・変更していません。
+## 専用応答文
 
-## LINE案内文（署名・公証済みダウンロード公開後に使用）
+こえのたね
 
-こえのたねに興味を持っていただき、ありがとうございます。
+ダウンロード（Mac用）：
+https://github.com/brandsmasaki-lang/voice-seed/releases/latest/download/voice-seed-macos-arm64.zip
 
-Fnキーを押して話し、離すと入力できる、無料のMac用音声入力アプリです。音声認識はMacの中で行います。
+初回の開き方・設定はこちら：
+https://ai-no-tane.com/lp/koenotane/#setup
 
-対応：AppleシリコンMac / macOS 26以降 / 日本語
+スマートフォンでこの案内を受け取った方は、ダウンロードURLをMacで開いてください。
 
-ダウンロード・初期設定はこちら：
-https://github.com/brandsmasaki-lang/voice-seed/releases
+## 配布物
 
-使い方・ソースコード：
-https://github.com/brandsmasaki-lang/voice-seed
-
-AI導入やアプリ開発のご相談も、このLINEで受け付けています。
-
----
-
-アプリが「準備中」の間は上記を送信しないでください。LINE管理画面の既存の応答や他サービスの案内を置き換える前に、対象の応答名と変更内容を決めます。この資料を作成しただけでは、LINEの自動返信や配布サイトの設定は変更されません。
+アプリ本体はGitHub Releasesで管理し、配布物の情報とチェックサムを掲載します。ソースコードはMITライセンスで公開します。LINEはダウンロード案内の入口であり、MITソースの閲覧・ビルド・再配布を技術的に制限するものではありません。

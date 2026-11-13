@@ -34,6 +34,7 @@ import FoundationModels
             }
             CommandGroup(after: .appInfo) {
                 Button("こえのたねの設定") { model.selectedTab = "設定"; model.showWindow() }.keyboardShortcut(",")
+                UpdateMenuItem(model: model, updater: model.updater)
             }
         }
         MenuBarExtra("こえのたね", systemImage: model.phase == .recording ? "mic.fill" : "waveform") {
@@ -45,6 +46,7 @@ import FoundationModels
             Button("入力画面を開く") { model.selectedTab = "入力"; model.showWindow() }
             Button("設定") { model.selectedTab = "設定"; model.showWindow() }
             Button("こえのたねについて") { model.selectedTab = "アプリについて"; model.showWindow() }
+            UpdateMenuItem(model: model, updater: model.updater)
             Divider()
             Button("終了") { NSApp.terminate(nil) }.keyboardShortcut("q")
         }
@@ -62,6 +64,8 @@ import FoundationModels
     func connect(_ model: AppModel) {
         guard self.model == nil else { return }
         self.model = model
+        model.updater.start()
+        model.publicInfo.start()
         let hotkey = GlobalHotkey()
         hotkey.onPress = { [weak model] in model?.toggle(fromShortcut: true) }
         self.hotkey = hotkey

@@ -19,6 +19,8 @@ enum RecordingPhase: String {
 }
 
 @MainActor final class AppModel: NSObject, ObservableObject {
+    let publicInfo = PublicInfoStore()
+    let updater = AppUpdateController()
     @Published var phase: RecordingPhase = .idle
     @Published var output = ""
     @Published var original = ""
@@ -75,7 +77,7 @@ enum RecordingPhase: String {
     private var startedAt = Date()
     private var sessionID = UUID()
 
-    var busy: Bool { phase != .idle }
+    var busy: Bool { phase != .idle || updater.sessionInProgress }
     var displayedOutput: String { busy && !livePreview.isEmpty ? livePreview : output }
     var duration: String { String(format: "%02d:%02d", seconds / 60, seconds % 60) }
     var shortcutLabel: String { ["⌃ ⌥ Space", "⌘ ⇧ Space", "⌃ ⇧ Space"][min(max(shortcut, 0), 2)] }

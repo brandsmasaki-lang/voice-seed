@@ -19,3 +19,6 @@ swiftc -target arm64-apple-macosx26.0 -module-cache-path "$PWD/.build/module-cac
 .build/TranscriptBufferTests
 plutil -lint Resources/Info.plist
 python3 Tests/PublicSourceTests.py
+swiftc -target arm64-apple-macosx26.0 -module-cache-path "$PWD/.build/module-cache" \
+    -parse-as-library Sources/PublicAppInfo.swift Tests/PublicAppInfoTests.swift -o .build/PublicAppInfoTests
+.build/PublicAppInfoTests

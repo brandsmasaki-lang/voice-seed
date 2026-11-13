@@ -1,0 +1,48 @@
+{
+  "schemaVersion": 1,
+  "revision": "2026-11-13-1",
+  "intro": "利用料・APIキーは不要です。音声認識と、任意のApple Intelligenceによる文章整形は、このMacで行います。",
+  "supportTitle": "開発者・サポート",
+  "links": [
+    {
+      "id": "Website",
+      "title": "株式会社ブランズバンクシステムズ",
+      "detail": "運営元の公式サイト",
+      "symbol": "building.2",
+      "url": "https://brands-bank.com/"
+    },
+    {
+      "id": "X",
+      "title": "服部雅樹のX",
+      "detail": "AI活用・開発の発信",
+      "symbol": "at",
+      "url": "https://x.com/masakihattori"
+    },
+    {
+      "id": "LINE",
+      "title": "AIの導入サポート及びビジネス相談はこちら",
+      "detail": "公式LINEでご相談を受け付けています",
+      "symbol": "bubble.left.and.bubble.right",
+      "url": "https://line.me/R/ti/p/%40833ciyeu"
+    },
+    {
+      "id": "GitHub",
+      "title": "Github ※こえのたねはオープンソース（MIT）です",
+      "detail": "ソースコード・更新履歴・不具合報告",
+      "symbol": "chevron.left.forwardslash.chevron.right",
+      "url": "https://github.com/brandsmasaki-lang/voice-seed"
+    },
+    {
+      "id": "Products",
+      "title": "AIのたね、AIのまどはこちら",
+      "detail": "アプリの紹介・使い方を見る",
+      "symbol": "square.stack.3d.up",
+      "url": "https://ai-no-tane.com/lp/003-2/"
+    }
+  ],
+  "latest": {
+    "version": "0.5.0",
+    "build": 7,
+    "notes": "運営側の表示設定の読み込みと、アプリ内の更新通知・更新ボタンを追加しました。"
+  }
+}

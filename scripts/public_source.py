@@ -7,7 +7,7 @@ TOP_LEVEL = (
     "CONTRIBUTING.md", "SECURITY.md", "CHANGELOG.md", "起動.command",
 )
 RESOURCES = (
-    "Info.plist", "AppLinks.plist", "Release.entitlements", "AppIcon.icns", "AppIcon1024.png",
+    "Info.plist", "PublicAppInfo.json", "SparkleLicense.txt", "Release.entitlements", "AppIcon.icns", "AppIcon1024.png",
 )
 FIXTURES = ("Tests/Fixtures/aqua-example.json", "Tests/Fixtures/atok-example.txt")
 

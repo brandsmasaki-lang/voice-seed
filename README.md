@@ -6,7 +6,7 @@
 
 こえのたね（声の種 / Voice Seed）は、日本語の音声を端末内で文字に変えるMacアプリです。利用料・APIキーは不要。Appleの音声認識を使うため、別のローカルLLMのインストールも必要ありません。
 
-**公開準備版 0.4.0：現在はソースからビルドできます。一般向けの署名・公証済みダウンロード版は準備中です。** 自作版のアドホック署名と、一般向け配布版は異なります。
+**こえのたね 0.5.0。無料で使える、オープンソース（MIT）のアプリです。** 初回起動とFn入力に必要な設定を、導入手順で説明しています。
 
 ## 対応環境
 
@@ -32,7 +32,7 @@ Windows・Intel Mac向けのビルドは提供していません。Apple Intelli
 
 ## インストールと初期設定
 
-署名・公証済み版を公開したら、このリポジトリの[Releases](https://github.com/brandsmasaki-lang/voice-seed/releases)に掲載します。公開済みの版がない場合は、下記の開発手順でビルドしてください。
+[公式LP](https://ai-no-tane.com/lp/koenotane/)から公式LINEへ進み、「こえのたね」と送ってダウンロード案内を受け取れます。アプリ本体・ソース・チェックサムは[GitHub Releases](https://github.com/brandsmasaki-lang/voice-seed/releases)で管理します。初回の開き方は[導入手順](docs/INSTALL.md)を確認してください。
 
 1. ダウンロード版はZIPを展開し、「こえのたね.app」をFinderの「アプリケーション」へコピーして開きます。
 2. アプリの「設定」で「日本語モデルを準備」を押し、初回ダウンロードを待ちます。
@@ -81,9 +81,15 @@ aqua replacements export > replacements.json
 
 音声・認識結果・辞書を開発者やクラウドAIへ送信する機能はありません。マイク音声をファイルに保存せず、認識履歴も永続保存しません。設定・辞書はこのMacに保存します。コピー・貼り付け時の文字はシステムのクリップボードに残ります。[データの扱い](PRIVACY.md)をご確認ください。
 
+## アプリ内の案内と更新
+
+会社名・説明・サポートリンクは運営元サイトの公開設定から取得します。文言を変更するたびにアプリを入れ替える必要はありません。通信できない場合は保存済みの内容を表示します。「アプリについて → 案内を再読込」から手動でも反映できます。
+
+最新版が出たことをアプリ内で知らせます。「更新する」または「更新を確認」から更新内容を確認し、インストール・再起動へ進みます。更新ファイルはSparkleのEdDSA署名で検証します。表示情報だけの変更ではアプリ本体を更新しません。辞書と設定は引き継ぎます。本体の更新では、macOSの許可を再登録する必要がある場合があります。
+
 ## ソースからビルドする
 
-AppleシリコンMac、macOS 26以降、macOS 26以降のSDKを含むXcodeまたはCommand Line Toolsが必要です。外部パッケージへの依存はありません。
+AppleシリコンMac、macOS 26以降、macOS 26以降のSDKを含むXcodeまたはCommand Line Toolsが必要です。更新機能にSparkle 2.10.1を使用し、ビルド時に公式配布物をダウンロードして固定したSHA-256を照合します。
 
 ```sh
 bash scripts/test.sh
@@ -105,11 +111,12 @@ open 'dist/こえのたね.app'
 
 - [株式会社ブランズバンクシステムズ](https://brands-bank.com/)
 - [服部雅樹のX @masakihattori](https://x.com/masakihattori)
-- [AI導入・開発相談LINE](https://line.me/R/ti/p/%40833ciyeu)
-- [GitHub：ソースコードと不具合報告](https://github.com/brandsmasaki-lang/voice-seed)
+- [AIの導入サポート及びビジネス相談はこちら](https://line.me/R/ti/p/%40833ciyeu)
+- [Github ※こえのたねはオープンソース（MIT）です](https://github.com/brandsmasaki-lang/voice-seed)
+- [AIのたね、AIのまどはこちら](https://ai-no-tane.com/lp/003-2/)
 
 LINEへの登録・相談は任意です。音声入力の利用にアカウント登録は必要ありません。不具合報告には実際の音声や個人辞書を添付せず、架空のデータで再現する手順を記載してください。[セキュリティ上の問題](SECURITY.md)は非公開の窓口をご利用ください。
 
 コードとドキュメントは[MITライセンス](LICENSE)。第三者の商標・システムモデル・フォントの権利は各権利者に帰属します。[クレジット](THIRD_PARTY_NOTICES.md)も参照してください。
 
-Voice Seed is a free, open-source Japanese dictation app for Apple Silicon Macs running macOS 26+. Hold Fn to speak, release to paste. Speech recognition and optional Apple Intelligence cleanup run on device. A signed and notarized binary is being prepared; source builds are currently available.
+Voice Seed is a free, open-source Japanese dictation app for Apple Silicon Macs running macOS 26+. Hold Fn to speak, release to paste. Speech recognition and optional Apple Intelligence cleanup run on device. The Mac app is available with first-open instructions. Source code is available under MIT.

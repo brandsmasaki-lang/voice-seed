@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 """Check release metadata and the exact export inventory; does not contact any service."""
 import plistlib
+import json
+import base64
 import re
 import sys
 from urllib.parse import urlparse
@@ -19,15 +21,22 @@ def check(root=ROOT):
             errors.append("Use a positive build number in Info.plist.")
         if info.get("LSMinimumSystemVersion") != "26.0":
             errors.append("Review compatibility documentation when changing the minimum macOS version.")
-        links = plistlib.loads((root / "Resources/AppLinks.plist").read_bytes())
-        for key in ("Website", "X", "LINE", "GitHub"):
+        public_info = json.loads((root / "Resources/PublicAppInfo.json").read_text())
+        if public_info.get("schemaVersion") != 1:
+            errors.append("Unsupported public display configuration schema.")
+        links = {link["id"]: link["url"] for link in public_info["links"]}
+        for key in ("Website", "X", "LINE", "GitHub", "Products"):
             value = links.get(key, "")
             url = urlparse(value)
             if (url.scheme != "https" or not url.hostname or url.username or url.password
                     or url.hostname.endswith((".example", ".invalid")) or url.hostname == "example.com"):
-                errors.append(f"Set a confirmed public HTTPS URL for {key} in AppLinks.plist.")
+                errors.append(f"Set a confirmed public HTTPS URL for {key} in PublicAppInfo.json.")
             elif key == "GitHub" and (url.hostname != "github.com" or len(url.path.strip('/').split('/')) != 2):
                 errors.append("GitHub must link to this app's repository, not a generic profile.")
+        if info.get("SUFeedURL") != "https://ai-no-tane.com/lp/koenotane/appcast.xml":
+            errors.append("Unexpected application update feed.")
+        if len(base64.b64decode(info.get("SUPublicEDKey", ""), validate=True)) != 32:
+            errors.append("A 32-byte public update verification key is required.")
         license_file = root / "LICENSE"
         if not license_file.is_file():
             errors.append("Choose and add the open-source LICENSE before export.")

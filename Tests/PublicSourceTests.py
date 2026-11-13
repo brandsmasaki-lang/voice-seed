@@ -1,7 +1,7 @@
 """Public export boundary tests use only synthetic files in a temporary directory."""
 import importlib.util
 from pathlib import Path
-import plistlib
+import json
 import shutil
 import sys
 import tempfile
@@ -41,14 +41,14 @@ class PublicSourceTests(unittest.TestCase):
         self.assertEqual(release_check.check(self.root), [])
 
     def test_missing_destination_blocks_public_export(self):
-        path = self.root / "Resources/AppLinks.plist"
-        links = plistlib.loads(path.read_bytes())
-        links["LINE"] = ""
-        path.write_bytes(plistlib.dumps(links))
+        path = self.root / "Resources/PublicAppInfo.json"
+        info = json.loads(path.read_text())
+        next(link for link in info["links"] if link["id"] == "LINE")["url"] = ""
+        path.write_text(json.dumps(info))
         self.assertTrue(any("LINE" in message for message in release_check.check(self.root)))
 
     def test_symlink_is_rejected_before_any_metadata_read(self):
-        path = self.root / "Resources/AppLinks.plist"
+        path = self.root / "Resources/PublicAppInfo.json"
         path.unlink()
         path.symlink_to(self.root / "synthetic-outside.plist")
         with patch.object(Path, "read_bytes", side_effect=AssertionError("Metadata must not be opened")):

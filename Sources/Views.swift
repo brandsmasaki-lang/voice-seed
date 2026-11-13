@@ -6,6 +6,14 @@ private let paper = Color(red: 0.97, green: 0.97, blue: 0.95)
 
 struct MainView: View {
     @ObservedObject var model: AppModel
+    @ObservedObject var publicInfo: PublicInfoStore
+    @ObservedObject var updater: AppUpdateController
+
+    init(model: AppModel) {
+        self.model = model
+        self.publicInfo = model.publicInfo
+        self.updater = model.updater
+    }
     var body: some View {
         HStack(spacing: 0) {
             sidebar
@@ -14,13 +22,17 @@ struct MainView: View {
                     Text(model.selectedTab == "入力" ? "VOICE WORKSPACE" : model.selectedTab == "単語辞書" ? "YOUR VOCABULARY" : model.selectedTab == "アプリについて" ? "ABOUT & SUPPORT" : "PREFERENCES")
                         .font(.system(size: 10, weight: .semibold, design: .monospaced)).tracking(2).foregroundStyle(.secondary)
                     Spacer()
+                    if publicInfo.updateAvailable {
+                        Button("更新があります") { model.selectedTab = "アプリについて" }
+                            .font(.system(size: 11, weight: .semibold)).foregroundStyle(green)
+                    }
                     Label("ローカル処理", systemImage: "lock.shield").font(.system(size: 11)).foregroundStyle(green)
                 }.padding(.horizontal, 32).padding(.top, 30).padding(.bottom, 22)
                 Group {
                     switch model.selectedTab {
                     case "単語辞書": DictionaryView(model: model)
                     case "設定": SettingsView(model: model)
-                    case "アプリについて": AboutView()
+                    case "アプリについて": AboutView(model: model, publicInfo: publicInfo, updater: updater)
                     default: input
                     }
                 }
@@ -163,6 +175,9 @@ struct MainView: View {
 }
 
 struct AboutView: View {
+    @ObservedObject var model: AppModel
+    @ObservedObject var publicInfo: PublicInfoStore
+    @ObservedObject var updater: AppUpdateController
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 22) {
@@ -177,15 +192,38 @@ struct AboutView: View {
                     }
                 }
                 VStack(alignment: .leading, spacing: 10) {
+                    HStack {
+                        Label("アプリの更新", systemImage: "arrow.triangle.2.circlepath").font(.system(size: 13, weight: .semibold))
+                        Spacer()
+                        Button(publicInfo.updateAvailable ? "更新する" : "更新を確認") { updater.checkForUpdates() }
+                            .disabled(model.phase != .idle || !updater.canCheckForUpdates)
+                    }
+                    if publicInfo.updateAvailable {
+                        Text("バージョン \(publicInfo.info.latest.version) が利用できます。")
+                            .font(.system(size: 12, weight: .medium)).foregroundStyle(green)
+                        Text(publicInfo.info.latest.notes).font(.system(size: 11)).foregroundStyle(.secondary)
+                    } else {
+                        Text("現在のバージョン：\(AppMetadata.version)（ビルド \(AppMetadata.build)）")
+                            .font(.system(size: 11)).foregroundStyle(.secondary)
+                    }
+                    Text("更新する場合は、案内に従ってインストール・再起動してください。辞書と設定は引き継ぎます。")
+                        .font(.system(size: 10)).foregroundStyle(.secondary)
+                }.padding(18).frame(maxWidth: .infinity, alignment: .leading).background(.white, in: RoundedRectangle(cornerRadius: 14))
+                VStack(alignment: .leading, spacing: 10) {
                     Label("無料で使える音声入力", systemImage: "leaf").font(.system(size: 13, weight: .semibold)).foregroundStyle(green)
-                    Text("利用料・APIキーは不要です。音声認識と、任意のApple Intelligenceによる文章整形は、このMacで行います。")
+                    Text(publicInfo.info.intro)
                         .font(.system(size: 12)).foregroundStyle(.secondary).lineSpacing(5)
                     Text("対応環境：Appleシリコン搭載Mac / macOS 26以降 / 日本語")
                         .font(.system(size: 11)).foregroundStyle(.secondary)
                 }.padding(18).frame(maxWidth: .infinity, alignment: .leading).background(.white, in: RoundedRectangle(cornerRadius: 14))
                 VStack(alignment: .leading, spacing: 12) {
-                    Text("開発者・サポート").font(.system(size: 13, weight: .semibold))
-                    ForEach(AppMetadata.links) { link in
+                    HStack {
+                        Text(publicInfo.info.supportTitle).font(.system(size: 13, weight: .semibold))
+                        Spacer()
+                        Button("案内を再読込") { Task { await publicInfo.refresh(force: true) } }
+                            .font(.system(size: 10)).disabled(publicInfo.refreshing)
+                    }
+                    ForEach(publicInfo.info.links) { link in
                         if let url = link.url {
                             Link(destination: url) { linkContent(link, available: true) }
                                 .buttonStyle(.plain).help(url.absoluteString)
@@ -196,7 +234,11 @@ struct AboutView: View {
                     }
                     Text("リンクは標準ブラウザで開きます。音声や認識結果をリンク先へ送ることはありません。")
                         .font(.system(size: 10)).foregroundStyle(.secondary)
+                    if !publicInfo.status.isEmpty {
+                        Text(publicInfo.status).font(.system(size: 10)).foregroundStyle(.secondary)
+                    }
                 }
+
                 DisclosureGroup("プライバシーとデータの扱い") {
                     Text(AppMetadata.bundledText("PRIVACY")).font(.system(size: 11)).textSelection(.enabled).padding(.top, 10)
                 }.font(.system(size: 12))
@@ -204,10 +246,12 @@ struct AboutView: View {
                     VStack(alignment: .leading, spacing: 14) {
                         Text(AppMetadata.bundledText("LICENSE", extension: "txt"))
                         Text(AppMetadata.bundledText("THIRD_PARTY_NOTICES"))
+                        Text(AppMetadata.bundledText("SparkleLicense", extension: "txt"))
                     }.font(.system(size: 10)).textSelection(.enabled).padding(.top, 10)
                 }.font(.system(size: 12))
             }.padding(.horizontal, 32).padding(.bottom, 28)
         }
+        .task { await publicInfo.refresh() }
     }
 
     private func linkContent(_ link: AppLink, available: Bool) -> some View {
@@ -222,6 +266,19 @@ struct AboutView: View {
             else { Text("準備中").font(.system(size: 10)).foregroundStyle(.secondary) }
         }.padding(15).frame(maxWidth: .infinity, alignment: .leading)
             .background(.white, in: RoundedRectangle(cornerRadius: 12))
+    }
+}
+
+struct UpdateMenuItem: View {
+    @ObservedObject var model: AppModel
+    @ObservedObject var updater: AppUpdateController
+    @ObservedObject var publicInfo: PublicInfoStore
+    init(model: AppModel, updater: AppUpdateController) {
+        self.model = model; self.updater = updater; self.publicInfo = model.publicInfo
+    }
+    var body: some View {
+        Button(publicInfo.updateAvailable ? "新しいバージョンに更新…" : "更新を確認…") { updater.checkForUpdates() }
+            .disabled(model.phase != .idle || !updater.canCheckForUpdates)
     }
 }
 

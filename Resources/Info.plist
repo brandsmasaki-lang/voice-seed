@@ -1,17 +1,52 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0"><dict>
-    <key>CFBundleName</key><string>こえのたね</string>
-    <key>CFBundleDisplayName</key><string>こえのたね</string>
-    <key>CFBundleIdentifier</key><string>jp.ainotane.voice-seed</string>
-    <key>CFBundleExecutable</key><string>VoiceSeed</string>
-    <key>CFBundlePackageType</key><string>APPL</string>
-    <key>CFBundleShortVersionString</key><string>0.4.0</string>
-    <key>CFBundleVersion</key><string>5</string>
-    <key>CFBundleIconFile</key><string>AppIcon</string>
-    <key>LSMinimumSystemVersion</key><string>26.0</string>
-    <key>NSMicrophoneUsageDescription</key><string>Fnキーを押している間、または録音ボタンで開始したときに声を録音し、このMacの中で文字に変えます。</string>
-    <key>NSSpeechRecognitionUsageDescription</key><string>日本語の音声をこのMac内で文字起こしします。</string>
-    <key>NSHighResolutionCapable</key><true/>
-    <key>NSSupportsAutomaticTermination</key><false/>
-</dict></plist>
+<plist version="1.0">
+<dict>
+	<key>CFBundleName</key>
+	<string>こえのたね</string>
+	<key>CFBundleDisplayName</key>
+	<string>こえのたね</string>
+	<key>CFBundleIdentifier</key>
+	<string>jp.ainotane.voice-seed</string>
+	<key>CFBundleExecutable</key>
+	<string>VoiceSeed</string>
+	<key>CFBundlePackageType</key>
+	<string>APPL</string>
+	<key>CFBundleShortVersionString</key>
+	<string>0.5.0</string>
+	<key>CFBundleVersion</key>
+	<string>7</string>
+	<key>CFBundleIconFile</key>
+	<string>AppIcon</string>
+	<key>LSMinimumSystemVersion</key>
+	<string>26.0</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>Fnキーを押している間、または録音ボタンで開始したときに声を録音し、このMacの中で文字に変えます。</string>
+	<key>NSSpeechRecognitionUsageDescription</key>
+	<string>日本語の音声をこのMac内で文字起こしします。</string>
+	<key>NSHighResolutionCapable</key>
+	<true/>
+	<key>NSSupportsAutomaticTermination</key>
+	<false/>
+	<key>SUFeedURL</key>
+	<string>https://ai-no-tane.com/lp/koenotane/appcast.xml</string>
+	<key>SUPublicEDKey</key>
+	<string>qKrzWeE/fELfIiQ5wRQSYMnWwbfBRbiG7+yhGGSK6zI=</string>
+	<key>SUEnableAutomaticChecks</key>
+	<false/>
+	<key>SUAutomaticallyUpdate</key>
+	<false/>
+	<key>SUVerifyUpdateBeforeExtraction</key>
+	<true/>
+	<key>SUEnableSystemProfiling</key>
+	<false/>
+	<key>CFBundleDevelopmentRegion</key>
+	<string>ja</string>
+	<key>CFBundleLocalizations</key>
+	<array>
+		<string>ja</string>
+	</array>
+	<key>NSHumanReadableCopyright</key>
+	<string>Copyright (c) 2026 株式会社ブランズバンクシステムズ</string>
+</dict>
+</plist>

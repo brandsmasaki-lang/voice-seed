@@ -3,7 +3,7 @@
 日本語のIssue・Pull Requestを歓迎します。大きな仕様変更は、着手前にIssueで目的と変更案を共有してください。
 
 1. AppleシリコンMac、macOS 26以降、対応SDKを含むXcodeまたはCommand Line Toolsを用意します。
-2. `bash scripts/test.sh` と `bash scripts/build.sh` を実行します。
+2. `bash scripts/test.sh` と `bash scripts/build.sh` を実行します。ビルドでは公式Sparkleを取得し、固定ハッシュを照合します。
 3. 変更した機能の実操作と、既存テストを確認します。音声・辞書の例は架空のデータにしてください。
 4. Pull Requestに変更後の動作と確認した環境を記載します。
 
