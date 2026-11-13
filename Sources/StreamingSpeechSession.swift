@@ -58,7 +58,7 @@ private final class AudioStreamPump: @unchecked Sendable {
 
     private func yield(_ buffer: AVAudioPCMBuffer) throws {
         if case .dropped = continuation.yield(AnalyzerInput(buffer: buffer)) {
-            throw VoiceError.message("音声認識が追いつかないため録音を中止しました。ほかの重い処理を止めてお試しください。")
+            throw VoiceError.message("音声認識が追いつかないため音声入力を中止しました。ほかの重い処理を止めてお試しください。")
         }
     }
 
@@ -161,7 +161,7 @@ private final class AudioStreamPump: @unchecked Sendable {
         input.installTap(onBus: 0, bufferSize: 2048, format: inputFormat) { [pump] buffer, _ in pump.enqueue(buffer) }
         tapped = true
         interruptedObserver = NotificationCenter.default.addObserver(forName: .AVAudioEngineConfigurationChange, object: engine, queue: .main) { [weak self] _ in
-            Task { @MainActor in self?.onFailure?(VoiceError.message("マイクの接続または音声設定が変更されました。もう一度録音してください。")) }
+            Task { @MainActor in self?.onFailure?(VoiceError.message("マイクの接続または音声設定が変更されました。もう一度音声入力してください。")) }
         }
         engine.prepare()
         try engine.start()
@@ -183,7 +183,7 @@ private final class AudioStreamPump: @unchecked Sendable {
         do {
             try await analyzer.finalizeAndFinishThroughEndOfInput()
             let text = try await reader?.value ?? ""
-            guard !text.isEmpty else { throw VoiceError.message("音声を聞き取れませんでした。マイクや音量を確認してお試しください。") }
+            guard !text.isEmpty else { throw VoiceError.noSpeech }
             return text
         } catch {
             reader?.cancel()

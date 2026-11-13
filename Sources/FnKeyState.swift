@@ -1,20 +1,33 @@
 import Foundation
 
-/// Only modifier transitions are observed. Ordinary keystrokes are never read.
+/// A key-down while Fn is held cancels dictation. Key characters and key codes are not needed for that check.
 struct FnKeyState {
-    enum Action: Equatable { case pressed, released }
+    enum Action: Equatable { case pressed, released, keyboardChord }
     private(set) var held = false
+    private(set) var chordUntilRelease = false
 
     mutating func update(keyCode: Int64, fnDown: Bool, otherModifiers: Bool) -> Action? {
-        if held && !fnDown { held = false; return .released }
-        guard keyCode == 63, fnDown, !otherModifiers, !held else { return nil }
+        if !fnDown {
+            let wasHeld = held
+            held = false; chordUntilRelease = false
+            return wasHeld ? .released : nil
+        }
+        if held && otherModifiers { return usedWithKey() }
+        guard keyCode == 63, !otherModifiers, !held, !chordUntilRelease else { return nil }
         held = true
         return .pressed
+    }
+
+    mutating func usedWithKey() -> Action? {
+        guard held else { return nil }
+        held = false; chordUntilRelease = true
+        return .keyboardChord
     }
 
     @discardableResult mutating func reset() -> Bool {
         let wasHeld = held
         held = false
+        chordUntilRelease = false
         return wasHeld
     }
 }

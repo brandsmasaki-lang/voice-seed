@@ -80,7 +80,7 @@ struct MainView: View {
             Spacer()
             VStack(alignment: .leading, spacing: 9) {
                 Label("あなたの声は、Macの中に。", systemImage: "leaf").font(.system(size: 10, weight: .medium)).foregroundStyle(green)
-                Text("音声を外部に送らずに文字起こし。\n録音ファイルは保存しません。")
+                Text("音声を外部に送らずに文字起こし。\n音声ファイルは保存しません。")
                     .font(.system(size: 10)).foregroundStyle(.secondary).lineSpacing(4)
             }.padding(12).frame(maxWidth: .infinity, alignment: .leading)
                 .background(paper, in: RoundedRectangle(cornerRadius: 12))
@@ -94,7 +94,7 @@ struct MainView: View {
     private var input: some View {
         VStack(spacing: 0) {
             Text(model.phase.title).font(.system(size: 27, weight: .semibold)).tracking(-0.6)
-            Text(model.phase == .idle ? (model.needsInputSetup ? "下の準備状況を確認してください。設定画面へ移動せずに準備できます。" : model.fnEnabled ? "入力先で Fn を押しながら話し、離すと入力できます。" : "思いついたことを、そのまま話してください。") : model.phase == .recording ? (model.recordingFromFn ? (model.canAutomaticallyPaste ? "Fn を離すと、文字起こしして元の入力欄に貼り付けます。" : "Fn を離すと、認識結果をこのアプリに表示します。") : "もう一度ボタンを押すと、録音を終了します。") : "音声は外部に送信せず、このMacで処理しています。")
+            Text(model.phase == .idle ? (model.needsInputSetup ? "下の準備状況を確認してください。設定画面へ移動せずに準備できます。" : model.fnEnabled ? "入力先で Fn を押しながら話し、離すと入力できます。" : "思いついたことを、そのまま話してください。") : model.phase == .recording ? (model.recordingFromFn ? (model.canAutomaticallyPaste ? "Fn を離すと、文字起こしして元の入力欄に貼り付けます。" : "Fn を離すと、認識結果をこのアプリに表示します。") : "もう一度ボタンを押すと、音声入力を終了します。") : "音声は外部に送信せず、このMacで処理しています。")
                 .font(.system(size: 12)).foregroundStyle(.secondary).padding(.top, 8)
             if model.needsInputSetup && model.phase == .idle {
                 InputSetupView(model: model).padding(.top, 15)
@@ -117,7 +117,7 @@ struct MainView: View {
                         }
                     }.frame(width: model.needsInputSetup && model.phase == .idle ? 62 : 94, height: model.needsInputSetup && model.phase == .idle ? 62 : 94).shadow(color: green.opacity(0.2), radius: 18, y: 7)
                 }.buttonStyle(.plain).disabled((model.busy && model.phase != .recording) || model.installing || !model.modelReady)
-                    .help(model.phase == .recording ? "録音を終了" : "録音を開始").accessibilityLabel(model.phase == .recording ? "録音を終了" : "録音を開始")
+                    .help(model.phase == .recording ? "音声入力を終了" : "音声入力を開始").accessibilityLabel(model.phase == .recording ? "音声入力を終了" : "音声入力を開始")
             }.padding(.top, 17).padding(.bottom, 8)
             if model.phase == .recording {
                 HStack(spacing: 4) {
@@ -215,7 +215,7 @@ struct InputSetupView: View {
                     Spacer()
                     Button("貼り付けを許可する") { model.requestAccessibility() }
                 }
-                Text("この許可がなくても録音と文字起こしはできます。結果はこのアプリに表示します。")
+                Text("この許可がなくても音声入力と文字起こしはできます。結果はこのアプリに表示します。")
                     .font(.system(size: 10)).foregroundStyle(.secondary)
             }
             HStack {
@@ -411,7 +411,7 @@ struct SettingsView: View {
             VStack(alignment: .leading, spacing: 20) {
                 Text("心地よい入力のために。").font(.system(size: 25, weight: .semibold))
                 card("Fnを押して話す → 離して入力", icon: "keyboard") {
-                    Toggle("Fn / 🌐 キーを押している間だけ録音する", isOn: $model.fnEnabled).font(.system(size: 12)).disabled(model.busy)
+                    Toggle("Fn / 🌐 キーを押している間だけ音声入力する", isOn: $model.fnEnabled).font(.system(size: 12)).disabled(model.busy)
                     Text("入力したい欄をクリックし、Fnを押しながら話してください。離すと文字起こしして、その欄へ自動で貼り付けます。")
                         .font(.system(size: 11)).foregroundStyle(.secondary).lineSpacing(4)
                     HStack {
@@ -432,7 +432,7 @@ struct SettingsView: View {
                         .font(.system(size: 11)).foregroundStyle(.secondary).lineSpacing(4)
                     Button("Macのキーボード設定を開く") { model.openKeyboardSettings() }
                     Text(model.fnLastEvent).font(.system(size: 11, weight: .medium)).foregroundStyle(green)
-                    Text("この設定画面ではFnを押しても録音しません。キーの検出だけを確認できます。通常の文字キーは監視・保存しません。")
+                    Text("この設定画面ではFnを押しても音声入力しません。キーの検出だけを確認できます。Fnとの組み合わせだけを検出し、入力した文字は取得・保存しません。")
                         .font(.system(size: 10)).foregroundStyle(.secondary)
                     Button("入力画面で試す") { model.selectedTab = "入力"; model.refreshInputPermissions() }
                 }
@@ -464,19 +464,19 @@ struct SettingsView: View {
                     }
                 }
                 card("予備のショートカット", icon: "keyboard") {
-                    Picker("録音の開始 / 終了", selection: $model.shortcut) {
+                    Picker("音声入力の開始 / 終了", selection: $model.shortcut) {
                         Text("⌃ ⌥ Space").tag(0); Text("⌘ ⇧ Space").tag(1); Text("⌃ ⇧ Space").tag(2)
                     }.disabled(model.busy)
                     if !model.hotkeyStatus.isEmpty { Text(model.hotkeyStatus).font(.system(size: 10)).foregroundStyle(.red) }
-                    Toggle("ショートカット録音後、元のアプリに自動で貼り付ける", isOn: $model.autoPaste).font(.system(size: 12)).disabled(model.busy)
-                    Text("クリップボードに結果を入れ、⌘Vを送ります。送信キーは押しません。アプリの録音ボタンでは結果を表示します。")
+                    Toggle("ショートカット音声入力後、元のアプリに自動で貼り付ける", isOn: $model.autoPaste).font(.system(size: 12)).disabled(model.busy)
+                    Text("クリップボードに結果を入れ、⌘Vを送ります。送信キーは押しません。アプリの音声入力ボタンでは結果を表示します。")
                         .font(.system(size: 10)).foregroundStyle(.secondary)
                     Button("アクセシビリティの許可を設定") { model.requestAccessibility() }
                 }
                 card("データについて", icon: "lock.shield") {
-                    Text("マイク音声はメモリ上で認識し、録音ファイルは保存しません。入力履歴は直近5件をこのMacに保存し、履歴画面で保存のオン・オフと削除ができます。統計は文字数・回数・所要時間・開始時のアプリ名をこのMacに保存します。単語辞書と設定もこのMacに保存します。")
+                    Text("マイク音声はメモリ上で認識し、音声ファイルは保存しません。入力履歴は直近5件をこのMacに保存し、履歴画面で保存のオン・オフと削除ができます。統計は文字数・回数・所要時間・開始時のアプリ名をこのMacに保存します。単語辞書と設定もこのMacに保存します。")
                         .font(.system(size: 11)).foregroundStyle(.secondary).lineSpacing(5)
-                    Text("録音は1回5分まで。処理中は新しい録音を開始できません。")
+                    Text("音声入力は1回5分まで。処理中は新しい音声入力を開始できません。")
                         .font(.system(size: 10)).foregroundStyle(.secondary)
                 }
             }.padding(.horizontal, 32).padding(.bottom, 24)

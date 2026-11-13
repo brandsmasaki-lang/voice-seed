@@ -130,7 +130,7 @@ enum RecordingPhase: String {
         case .ignore: return
         case .prepareSpeechModel:
             resultPresentation = .nonactivatingNotice
-            notice = "まだ録音を開始できません。入力画面の「日本語モデルを準備」を押してください。"
+            notice = "まだ音声入力を開始できません。入力画面の「日本語モデルを準備」を押してください。"
             selectedTab = "入力"; presentRecordingResult(); return
         case .record:
             break
@@ -152,7 +152,13 @@ enum RecordingPhase: String {
     func fnInterrupted() {
         guard holdRecording.active else { return }
         cancel()
-        fnLastEvent = "Fnキーの検知が中断されたため、録音をキャンセルしました。"
+        fnLastEvent = "Fnキーの検知が中断されたため、音声入力をキャンセルしました。"
+    }
+
+    func fnUsedWithAnotherKey() {
+        if holdRecording.active { cancel(silently: true) }
+        notice = ""; backgroundNotice = ""; hud?.hide()
+        fnLastEvent = "Fnとの組み合わせ操作のため、音声入力は行いません。"
     }
 
     override convenience init() {
@@ -316,12 +322,13 @@ enum RecordingPhase: String {
                     selectedTab = "入力"
                     presentRecordingResult()
                 }
-            } catch is CancellationError { notice = "録音をキャンセルしました。" }
+            } catch VoiceError.noSpeech { clearEmptyInputNotice() }
+            catch is CancellationError { notice = "音声入力をキャンセルしました。" }
             catch { notice = error.localizedDescription; presentRecordingResult() }
         }
     }
 
-    func cancel() {
+    func cancel(silently: Bool = false) {
         guard phase == .recording || phase == .preparing else { return }
         sessionID = UUID()
         work?.cancel(); work = nil
@@ -329,19 +336,25 @@ enum RecordingPhase: String {
         liveSession?.cancel(); liveSession = nil
         livePreview = ""; phase = .idle; level = 0; hud?.hide()
         holdRecording.reset(); recordingFromFn = false
-        notice = "録音をキャンセルしました。"
+        notice = silently ? "" : "音声入力をキャンセルしました。"
+        backgroundNotice = ""
         prewarm()
     }
 
-    private func fail(_ error: Error) {
+    func fail(_ error: Error) {
         timer?.invalidate(); timer = nil
         liveSession?.cancel(); liveSession = nil
         livePreview = ""; phase = .idle; hud?.hide()
         holdRecording.reset(); recordingFromFn = false
+        if let voiceError = error as? VoiceError, case .noSpeech = voiceError { clearEmptyInputNotice(); prewarm(); return }
         notice = error.localizedDescription
         selectedTab = "入力"
         presentRecordingResult()
         prewarm()
+    }
+
+    private func clearEmptyInputNotice() {
+        notice = ""; backgroundNotice = ""; hud?.hide()
     }
 
     func shutdown() {
@@ -475,7 +488,8 @@ enum RecordingPhase: String {
                     catch { notice = "文章整形: \(error.localizedDescription)" }
                 }
                 recordActivity(text: output, application: "音声ファイル", inputSeconds: nil)
-            } catch { notice = error.localizedDescription }
+            } catch VoiceError.noSpeech { clearEmptyInputNotice() }
+            catch { notice = error.localizedDescription }
         }
     }
 

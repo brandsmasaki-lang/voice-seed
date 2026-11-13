@@ -4,6 +4,7 @@ import FoundationModels
 
 enum VoiceError: LocalizedError {
     case message(String)
+    case noSpeech
     var errorDescription: String? { if case .message(let text) = self { return text }; return nil }
 }
 
@@ -75,7 +76,7 @@ enum SpeechService {
                 await analyzer.cancelAndFinishNow()
             }
             let result = try await reader.value
-            guard !result.isEmpty else { throw VoiceError.message("音声を聞き取れませんでした。マイクや音量を確認して、もう一度お試しください。") }
+            guard !result.isEmpty else { throw VoiceError.noSpeech }
             return result
         } catch {
             reader.cancel()

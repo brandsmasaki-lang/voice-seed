@@ -10,13 +10,14 @@ import ApplicationServices
     var onPress: (() -> Void)?
     var onRelease: (() -> Void)?
     var onInterrupted: (() -> Void)?
+    var onKeyboardChord: (() -> Void)?
     var running: Bool { tap != nil }
 
     @discardableResult func start() -> Bool {
         if let tap { return CGEvent.tapIsEnabled(tap: tap) }
         // Do not trigger an OS permission prompt on launch; the setup button does that.
         guard CGPreflightListenEventAccess() || AXIsProcessTrusted() else { return false }
-        let mask = CGEventMask(1) << CGEventType.flagsChanged.rawValue
+        let mask = (CGEventMask(1) << CGEventType.flagsChanged.rawValue) | (CGEventMask(1) << CGEventType.keyDown.rawValue)
         guard let tap = CGEvent.tapCreate(tap: .cgSessionEventTap, place: .headInsertEventTap,
                                          options: .listenOnly, eventsOfInterest: mask, callback: { _, type, event, context in
             guard let context else { return Unmanaged.passUnretained(event) }
@@ -38,6 +39,11 @@ import ApplicationServices
             if let tap { CGEvent.tapEnable(tap: tap, enable: true) }
             return
         }
+        if type == .keyDown {
+            // Observe only whether a key was pressed during Fn. Never extract typed text or its key code.
+            if state.usedWithKey() == .keyboardChord { onKeyboardChord?() }
+            return
+        }
         guard type == .flagsChanged else { return }
         let flags = event.flags
         let other = !flags.intersection([.maskCommand, .maskShift, .maskControl, .maskAlternate]).isEmpty
@@ -45,6 +51,7 @@ import ApplicationServices
                             fnDown: flags.contains(.maskSecondaryFn), otherModifiers: other) {
         case .pressed: onPress?()
         case .released: onRelease?()
+        case .keyboardChord: onKeyboardChord?()
         case nil: break
         }
     }
@@ -92,7 +99,7 @@ import ApplicationServices
     private var noticeVisible = false
     private var noticeTimer: Timer?
     init(model: AppModel) {
-        panel = NSPanel(contentRect: NSRect(x: 0, y: 0, width: 280, height: 66),
+        panel = NSPanel(contentRect: NSRect(x: 0, y: 0, width: 300, height: 54),
                         styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
         panel.level = .floating
         panel.isOpaque = false
@@ -110,11 +117,11 @@ import ApplicationServices
     }
     func show() {
         noticeTimer?.invalidate(); noticeTimer = nil; noticeVisible = false
-        display(width: 280, height: 66)
+        display(width: 300, height: 54)
     }
     func showNotice() {
         noticeTimer?.invalidate(); noticeVisible = true
-        display(width: 380, height: 100)
+        display(width: 420, height: 54)
         noticeTimer = Timer.scheduledTimer(withTimeInterval: 6, repeats: false) { [weak self] _ in
             MainActor.assumeIsolated { self?.hide() }
         }
@@ -130,12 +137,12 @@ struct HUDView: View {
             if !model.backgroundNotice.isEmpty {
                 HStack(alignment: .top, spacing: 10) {
                     Image(systemName: "info.circle").foregroundStyle(Color.mint)
-                    Text(model.backgroundNotice).font(.system(size: 11)).lineLimit(3).frame(maxWidth: .infinity, alignment: .leading)
+                    Text(model.backgroundNotice).font(.system(size: 11)).lineLimit(2).frame(maxWidth: .infinity, alignment: .leading)
                     Button("開く") { model.hud?.hide(); model.selectedTab = "入力"; model.showWindow() }
                         .buttonStyle(.borderless).font(.system(size: 11))
                     Button { model.hud?.hide() } label: { Image(systemName: "xmark").font(.system(size: 10)) }
                         .buttonStyle(.borderless).help("閉じる")
-                }.padding(14).frame(width: 380, height: 100)
+                }.padding(.horizontal, 12).padding(.vertical, 8).frame(width: 420, height: 54)
             } else {
                 HStack(spacing: 12) {
                     if model.phase == .recording { Image(systemName: "waveform").foregroundStyle(Color.mint) }
@@ -149,10 +156,10 @@ struct HUDView: View {
                         Button { model.stop() } label: { Image(systemName: "stop.fill").font(.system(size: 12)) }
                             .buttonStyle(.borderless).help("聞き取りを終了")
                     }
-                }.padding(16).frame(width: 280, height: 66)
+                }.padding(12).frame(width: 300, height: 54)
             }
         }
-        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 20))
-        .overlay(RoundedRectangle(cornerRadius: 20).stroke(.white.opacity(0.15)))
+        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 14))
+        .overlay(RoundedRectangle(cornerRadius: 14).stroke(.white.opacity(0.15)))
     }
 }

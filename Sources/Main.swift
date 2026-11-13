@@ -39,9 +39,9 @@ import FoundationModels
         }
         MenuBarExtra("こえのたね", systemImage: model.phase == .recording ? "mic.fill" : "waveform") {
             Text(model.phase == .idle ? "こえのたね" : model.phase.title)
-            Button(model.phase == .recording ? "録音を終了" : "録音を開始") { model.toggle(fromShortcut: true) }
+            Button(model.phase == .recording ? "音声入力を終了" : "音声入力を開始") { model.toggle(fromShortcut: true) }
                 .disabled(model.busy && model.phase != .recording)
-            if model.phase == .recording { Button("録音をキャンセル") { model.cancel() } }
+            if model.phase == .recording { Button("音声入力をキャンセル") { model.cancel() } }
             Divider()
             Button("入力画面を開く") { model.selectedTab = "入力"; model.showWindow() }
             Button("設定") { model.selectedTab = "設定"; model.showWindow() }
@@ -79,6 +79,7 @@ import FoundationModels
         fn.onPress = { [weak model] in model?.fnPressed() }
         fn.onRelease = { [weak model] in model?.fnReleased() }
         fn.onInterrupted = { [weak model] in model?.fnInterrupted() }
+        fn.onKeyboardChord = { [weak model] in model?.fnUsedWithAnotherKey() }
         model.fnMonitor = fn
         model.refreshInputPermissions()
         permissionTimer = Timer.scheduledTimer(withTimeInterval: 2, repeats: true) { [weak model] _ in

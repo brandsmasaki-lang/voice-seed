@@ -13,15 +13,15 @@
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>
-	<string>0.6.1</string>
+	<string>0.6.2</string>
 	<key>CFBundleVersion</key>
-	<string>10</string>
+	<string>11</string>
 	<key>CFBundleIconFile</key>
 	<string>AppIcon</string>
 	<key>LSMinimumSystemVersion</key>
 	<string>26.0</string>
 	<key>NSMicrophoneUsageDescription</key>
-	<string>Fnキーを押している間、または録音ボタンで開始したときに声を録音し、このMacの中で文字に変えます。</string>
+	<string>Fnキーを押している間、または音声入力ボタンで開始したときに声をこのMacの中で文字に変えます。</string>
 	<key>NSSpeechRecognitionUsageDescription</key>
 	<string>日本語の音声をこのMac内で文字起こしします。</string>
 	<key>NSHighResolutionCapable</key>

@@ -49,6 +49,17 @@ import Foundation
         while model.installing && Date() < failureDeadline { await Task.yield() }
         check(!model.installing && !model.modelReady && model.notice.contains("通信失敗"), "Download failure leaves a visible reason and a retryable idle state")
         check(model.selectedTab == "入力", "A download failure does not force a settings loop")
+        let windowsBeforeEmptyInput = windowPresentations
+        model.output = "保持する合成の文章"
+        model.notice = "古い通知"; model.backgroundNotice = "古い通知"
+        model.fail(VoiceError.noSpeech)
+        check(model.notice.isEmpty && model.backgroundNotice.isEmpty, "No speech never presents an error popup")
+        check(model.output == "保持する合成の文章" && model.phase == .idle, "No speech preserves the last result and returns to idle")
+        check(windowPresentations == windowsBeforeEmptyInput, "No speech never activates the app")
+        model.notice = "Fnの準備通知"; model.backgroundNotice = "Fnの準備通知"
+        model.fnUsedWithAnotherKey()
+        check(model.notice.isEmpty && model.backgroundNotice.isEmpty, "Fn keyboard chords dismiss notifications silently")
+        check(windowPresentations == windowsBeforeEmptyInput, "Fn Delete cannot activate the main window")
         print("PASS: \(checks) AppModel fresh-install integration checks (synthetic assets; no microphone recording)")
     }
 }
