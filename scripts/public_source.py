@@ -10,16 +10,31 @@ RESOURCES = (
     "Info.plist", "PublicAppInfo.json", "SparkleLicense.txt", "Release.entitlements", "AppIcon.icns", "AppIcon1024.png",
 )
 FIXTURES = ("Tests/Fixtures/aqua-example.json", "Tests/Fixtures/atok-example.txt")
+IOS_FIXED = (
+    "iOS/Package.swift", "iOS/README.md", "iOS/THIRD_PARTY_NOTICES.txt",
+    "iOS/VoiceSeed.xcodeproj/project.pbxproj",
+    "iOS/VoiceSeed.xcodeproj/xcshareddata/xcschemes/VoiceSeed-iOS.xcscheme",
+    "iOS/Assets.xcassets/Contents.json",
+    "iOS/Assets.xcassets/AppIcon.appiconset/Contents.json",
+    "iOS/Assets.xcassets/AppIcon.appiconset/AppIcon.png",
+    "iOS/Assets.xcassets/BrandIcon.imageset/Contents.json",
+    "iOS/Assets.xcassets/BrandIcon.imageset/BrandIcon.png",
+)
 
 
 def public_files(root=ROOT):
     paths = [root / name for name in TOP_LEVEL]
     paths += [root / "Resources" / name for name in RESOURCES]
     paths += [root / name for name in FIXTURES]
+    paths += [root / name for name in IOS_FIXED]
     patterns = {
         "Sources": ("*.swift",), "Tests": ("*.swift", "*.py"),
         "scripts": ("*.sh", "*.py", "*.swift"), "docs": ("*.md",),
         ".github/workflows": ("*.yml",), ".github/ISSUE_TEMPLATE": ("*.yml", "*.md"),
+        "iOS/Core": ("*.swift",), "iOS/CoreTests": ("*.swift",),
+        "iOS/App": ("*.swift",), "iOS/Keyboard": ("*.swift",), "iOS/Shared": ("*.swift",),
+        "iOS/Tests": ("*.swift",), "iOS/Scripts": ("*.py", "*.sh"),
+        "iOS/Config": ("*.plist", "*.xcconfig", "*.xcprivacy", "*.entitlements"),
     }
     for directory, globs in patterns.items():
         for glob in globs:

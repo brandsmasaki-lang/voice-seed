@@ -12,3 +12,6 @@ qa/*.wav
 .env.*
 !.env.example
 __pycache__/
+.swiftpm/
+xcuserdata/
+*.xcuserstate
