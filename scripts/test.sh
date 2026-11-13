@@ -28,4 +28,7 @@ swiftc -target arm64-apple-macosx26.0 -module-cache-path "$PWD/.build/module-cac
 swiftc -target arm64-apple-macosx26.0 -module-cache-path "$PWD/.build/module-cache" \
     -parse-as-library Sources/LocalActivity.swift Sources/RecordingPresentation.swift Tests/LocalActivityTests.swift -o .build/LocalActivityTests
 .build/LocalActivityTests
+swiftc -target arm64-apple-macosx26.0 -module-cache-path "$PWD/.build/module-cache" \
+    -parse-as-library Sources/ApplicationInstallService.swift Tests/ApplicationInstallTests.swift -o .build/ApplicationInstallTests
+.build/ApplicationInstallTests
 bash scripts/test-startup.sh

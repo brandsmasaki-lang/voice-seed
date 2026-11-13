@@ -58,10 +58,13 @@ import FoundationModels
     private var hotkey: GlobalHotkey?
     private var activity: NSObjectProtocol?
     private var commandMode = false
+    private var installationReady = false
+    private var pendingModel: AppModel?
     private var permissionTimer: Timer?
     private var sleepObserver: NSObjectProtocol?
 
     func connect(_ model: AppModel) {
+        guard installationReady else { pendingModel = model; return }
         guard self.model == nil else { return }
         self.model = model
         model.updater.start()
@@ -120,6 +123,12 @@ import FoundationModels
                 fflush(stdout)
                 exit(exitCode)
             }
+            return
+        }
+        ApplicationInstallCoordinator.prepare { [weak self] in
+            guard let self else { return }
+            self.installationReady = true
+            if let model = self.pendingModel { self.pendingModel = nil; self.connect(model) }
         }
     }
 

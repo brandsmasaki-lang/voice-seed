@@ -14,7 +14,7 @@ import Sparkle
     }
 
     func start() {
-        guard !started else { return }
+        guard !started, ApplicationInstallService().isInstalled(Bundle.main.bundleURL) else { return }
         started = true
         controller.startUpdater()
     }

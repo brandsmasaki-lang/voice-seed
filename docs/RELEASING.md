@@ -20,7 +20,7 @@ CIのチェックは公開用ファイル一覧・一部の偶発的な認証情
 
 ## 現在のアプリ配布
 
-`bash scripts/build.sh` の後に `bash scripts/package-app.sh` を実行します。ZIPにはアプリ本体だけを入れ、初回起動・Fn許可の説明はLPとdocs/INSTALL.mdで案内します。`docs/INSTALL.md` はApple公式のアプリ単位の許可手順を説明し、システム全体のセキュリティ無効化は案内しません。通常のGitHub CIでのビルド成功と、別のMacでの実操作検証は分けて記録してください。
+`bash scripts/build.sh` の後に `bash scripts/package-app.sh` を実行します。続いて `bash scripts/package-dmg.sh` を実行すると、アプリとアプリケーションへの移動先を並べたDMGを作ります。ZIPにはアプリ本体だけを入れ、初回起動・Fn許可の説明はLPとdocs/INSTALL.mdで案内します。`docs/INSTALL.md` はApple公式のアプリ単位の許可手順を説明し、システム全体のセキュリティ無効化は案内しません。通常のGitHub CIでのビルド成功と、別のMacでの実操作検証は分けて記録してください。
 
 公式LPはLINEの案内を入口にし、LINEHarnessの専用キーワード応答からアプリのダウンロードURLを届けます。
 
@@ -64,6 +64,6 @@ bash scripts/release.sh
 
 ## GitHub Releases
 
-実際の配布物と検証範囲を明示します。Developer ID署名・公証の有無は、LPの初回起動の案内に正確に記載します。該当コミットへバージョンタグを付け、変更内容・対応OS・既知の制約・チェックサムと3つの成果物を添付します。固定名の `voice-seed-macos-arm64.zip` も各リリースへ含め、LINEが案内するlatestのURLを維持します。
+実際の配布物と検証範囲を明示します。Developer ID署名・公証の有無は、LPの初回起動の案内に正確に記載します。該当コミットへバージョンタグを付け、変更内容・対応OS・既知の制約・チェックサムと3つの成果物を添付します。初回導入は固定名の `voice-seed-macos-arm64.dmg` を案内します。既存利用者のリンクとアプリ内更新を保つため、`voice-seed-macos-arm64.zip` も各リリースへ含めます。
 
 リポジトリではPrivate vulnerability reportingを有効にします。公開Issueへ機密情報を誘導する設定や、認証情報を含むCIログを作らないでください。リポジトリの既定ブランチと保護設定、Issueの受付窓口も確認してください。
