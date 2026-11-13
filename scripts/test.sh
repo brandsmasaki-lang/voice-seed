@@ -12,6 +12,9 @@ swiftc -target arm64-apple-macosx26.0 -module-cache-path "$PWD/.build/module-cac
     -parse-as-library Sources/FnKeyState.swift Tests/FnKeyStateTests.swift -o .build/FnKeyStateTests
 .build/FnKeyStateTests
 swiftc -target arm64-apple-macosx26.0 -module-cache-path "$PWD/.build/module-cache" \
+    -parse-as-library Sources/FnStartPolicy.swift Tests/FnStartPolicyTests.swift -o .build/FnStartPolicyTests
+.build/FnStartPolicyTests
+swiftc -target arm64-apple-macosx26.0 -module-cache-path "$PWD/.build/module-cache" \
     -parse-as-library Sources/TextPipeline.swift Sources/DictionaryImporter.swift Tests/DictionaryImporterTests.swift -o .build/DictionaryImporterTests
 .build/DictionaryImporterTests
 swiftc -target arm64-apple-macosx26.0 -module-cache-path "$PWD/.build/module-cache" \
@@ -22,3 +25,4 @@ python3 Tests/PublicSourceTests.py
 swiftc -target arm64-apple-macosx26.0 -module-cache-path "$PWD/.build/module-cache" \
     -parse-as-library Sources/PublicAppInfo.swift Tests/PublicAppInfoTests.swift -o .build/PublicAppInfoTests
 .build/PublicAppInfoTests
+bash scripts/test-startup.sh

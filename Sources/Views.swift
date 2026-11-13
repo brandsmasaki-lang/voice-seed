@@ -92,13 +92,18 @@ struct MainView: View {
     private var input: some View {
         VStack(spacing: 0) {
             Text(model.phase.title).font(.system(size: 27, weight: .semibold)).tracking(-0.6)
-            Text(model.phase == .idle ? (model.fnEnabled ? "入力先で Fn を押しながら話し、離すと入力できます。" : "思いついたことを、そのまま話してください。") : model.phase == .recording ? (model.recordingFromFn ? "Fn を離すと、文字起こしして元の入力欄に貼り付けます。" : "もう一度ボタンを押すと、録音を終了します。") : "音声は外部に送信せず、このMacで処理しています。")
+            Text(model.phase == .idle ? (model.needsInputSetup ? "下の準備状況を確認してください。設定画面へ移動せずに準備できます。" : model.fnEnabled ? "入力先で Fn を押しながら話し、離すと入力できます。" : "思いついたことを、そのまま話してください。") : model.phase == .recording ? (model.recordingFromFn ? (model.canAutomaticallyPaste ? "Fn を離すと、文字起こしして元の入力欄に貼り付けます。" : "Fn を離すと、認識結果をこのアプリに表示します。") : "もう一度ボタンを押すと、録音を終了します。") : "音声は外部に送信せず、このMacで処理しています。")
                 .font(.system(size: 12)).foregroundStyle(.secondary).padding(.top, 8)
+            if model.needsInputSetup && model.phase == .idle {
+                InputSetupView(model: model).padding(.top, 15)
+            }
             ZStack {
-                Circle().fill(green.opacity(0.035)).frame(width: 166, height: 166)
-                Circle().stroke(green.opacity(0.10), lineWidth: 1).frame(width: 142, height: 142)
-                Circle().stroke(green.opacity(0.14), lineWidth: 1).frame(width: 118, height: 118)
-                    .scaleEffect(model.phase == .recording ? 1 + model.level * 0.15 : 1)
+                if !model.needsInputSetup || model.phase != .idle {
+                    Circle().fill(green.opacity(0.035)).frame(width: 166, height: 166)
+                    Circle().stroke(green.opacity(0.10), lineWidth: 1).frame(width: 142, height: 142)
+                    Circle().stroke(green.opacity(0.14), lineWidth: 1).frame(width: 118, height: 118)
+                        .scaleEffect(model.phase == .recording ? 1 + model.level * 0.15 : 1)
+                }
                 Button { model.toggle() } label: {
                     ZStack {
                         Circle().fill((model.phase == .recording ? Color(red: 0.71, green: 0.28, blue: 0.23) : green).gradient)
@@ -108,8 +113,8 @@ struct MainView: View {
                             Image(systemName: model.phase == .recording ? "stop.fill" : "mic.fill")
                                 .font(.system(size: model.phase == .recording ? 24 : 32, weight: .medium)).foregroundStyle(.white)
                         }
-                    }.frame(width: 94, height: 94).shadow(color: green.opacity(0.2), radius: 18, y: 7)
-                }.buttonStyle(.plain).disabled((model.busy && model.phase != .recording) || model.installing)
+                    }.frame(width: model.needsInputSetup && model.phase == .idle ? 62 : 94, height: model.needsInputSetup && model.phase == .idle ? 62 : 94).shadow(color: green.opacity(0.2), radius: 18, y: 7)
+                }.buttonStyle(.plain).disabled((model.busy && model.phase != .recording) || model.installing || !model.modelReady)
                     .help(model.phase == .recording ? "録音を終了" : "録音を開始").accessibilityLabel(model.phase == .recording ? "録音を終了" : "録音を開始")
             }.padding(.top, 17).padding(.bottom, 8)
             if model.phase == .recording {
@@ -163,14 +168,59 @@ struct MainView: View {
             }.padding(.top, 14)
             Text("フィラーはルールで除去。文章整形をオンにすると、Apple Intelligenceが句読点・改行も整えます。")
                 .font(.system(size: 10)).foregroundStyle(.secondary).frame(maxWidth: .infinity, alignment: .leading).padding(.top, 7)
-            if !model.modelReady {
-                Button { model.selectedTab = "設定" } label: { Label(model.modelStatus + " → 設定へ", systemImage: "arrow.down.circle") }
-                    .font(.system(size: 10)).buttonStyle(.plain).foregroundStyle(green).padding(.top, 12)
-            } else if model.fnEnabled && (!model.fnReady || !model.pasteReady || !model.autoPaste) {
-                Button { model.selectedTab = "設定" } label: { Label("Fn入力を使うには、設定で2つの許可を確認してください →", systemImage: "keyboard") }
-                    .font(.system(size: 11)).buttonStyle(.plain).foregroundStyle(green).padding(.top, 12)
-            }
         }.padding(.horizontal, 32).padding(.bottom, 22)
+    }
+}
+
+struct InputSetupView: View {
+    @ObservedObject var model: AppModel
+    var body: some View {
+        VStack(alignment: .leading, spacing: 9) {
+            Label("音声入力の準備", systemImage: "checklist").font(.system(size: 12, weight: .semibold))
+            if !model.modelReady {
+                HStack {
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text("日本語モデル").fontWeight(.medium)
+                        Text(model.modelStatus).foregroundStyle(.secondary)
+                    }
+                    Spacer()
+                    Button(model.installing ? "ダウンロード中…" : "日本語モデルを準備") { model.installModel() }
+                        .disabled(model.installing || model.busy)
+                    if model.installing { ProgressView().controlSize(.small) }
+                }
+                Text("初回はモデルのダウンロードが必要です。「準備完了」まで待ってください。Apple Intelligenceの設定とは別です。")
+                    .font(.system(size: 10)).foregroundStyle(.secondary)
+            }
+            if model.microphoneStatus != .authorized {
+                HStack {
+                    Text("マイク：\(model.microphoneStatus == .notDetermined ? "初回の許可が必要" : "許可が必要")")
+                    Spacer()
+                    Button("マイクを許可する") { model.requestMicrophonePermission() }
+                }
+            }
+            if model.fnEnabled && !model.fnReady {
+                HStack {
+                    Text("Fnキーの検知：入力監視の許可が必要")
+                    Spacer()
+                    Button("入力監視を設定する") { model.requestFnPermission() }
+                }
+            }
+            if model.autoPaste && !model.pasteReady {
+                HStack {
+                    Text("自動貼り付け：アクセシビリティの許可が必要")
+                    Spacer()
+                    Button("貼り付けを許可する") { model.requestAccessibility() }
+                }
+                Text("この許可がなくても録音と文字起こしはできます。結果はこのアプリに表示します。")
+                    .font(.system(size: 10)).foregroundStyle(.secondary)
+            }
+            HStack {
+                Button("準備状況を再確認") { Task { await model.refresh(); model.refreshInputPermissions() } }
+                    .disabled(model.installing || model.busy)
+                Spacer()
+                Link("設定で困ったとき", destination: URL(string: "https://ai-no-tane.com/lp/koenotane/#troubleshooting")!)
+            }
+        }.font(.system(size: 11)).padding(14).background(.white, in: RoundedRectangle(cornerRadius: 12))
     }
 }
 
@@ -380,6 +430,7 @@ struct SettingsView: View {
                     Text(model.fnLastEvent).font(.system(size: 11, weight: .medium)).foregroundStyle(green)
                     Text("この設定画面ではFnを押しても録音しません。キーの検出だけを確認できます。通常の文字キーは監視・保存しません。")
                         .font(.system(size: 10)).foregroundStyle(.secondary)
+                    Button("入力画面で試す") { model.selectedTab = "入力"; model.refreshInputPermissions() }
                 }
                 card("音声認識", icon: "waveform") {
                     Text("日本語 / Apple SpeechAnalyzer").font(.system(size: 13, weight: .medium))

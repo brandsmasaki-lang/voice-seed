@@ -38,6 +38,7 @@ enum RecordingPhase: String {
     }
     @Published var fnReady = false
     @Published var pasteReady = false
+    @Published var microphoneStatus = AVCaptureDevice.authorizationStatus(for: .audio)
     @Published var fnLastEvent = "Fnキーを押して離すと、ここで検出を確認できます。"
     @Published var recordingFromFn = false
     @Published var pendingDictionaryImport: DictionaryImportPreview?
@@ -73,16 +74,24 @@ enum RecordingPhase: String {
     private var target: NSRunningApplication?
     private var focusedAtStart: AXUIElement?
     private var pasteThisRecording = false
+    private var displayOnlyReason = ""
     private var work: Task<Void, Never>?
     private var startedAt = Date()
     private var sessionID = UUID()
+    private let speechModel: SpeechModelAccess
 
     var busy: Bool { phase != .idle || updater.sessionInProgress }
     var displayedOutput: String { busy && !livePreview.isEmpty ? livePreview : output }
     var duration: String { String(format: "%02d:%02d", seconds / 60, seconds % 60) }
     var shortcutLabel: String { ["⌃ ⌥ Space", "⌘ ⇧ Space", "⌃ ⇧ Space"][min(max(shortcut, 0), 2)] }
+    var needsInputSetup: Bool {
+        !modelReady || microphoneStatus != .authorized || (fnEnabled && !fnReady) || (autoPaste && !pasteReady)
+    }
+    var canAutomaticallyPaste: Bool { autoPaste && pasteReady }
 
     func refreshInputPermissions() {
+        let microphone = AVCaptureDevice.authorizationStatus(for: .audio)
+        if microphoneStatus != microphone { microphoneStatus = microphone }
         let canPaste = AXIsProcessTrusted()
         if pasteReady != canPaste { pasteReady = canPaste }
         let canDetectFn: Bool
@@ -103,12 +112,18 @@ enum RecordingPhase: String {
 
     func fnPressed() {
         fnLastEvent = "Fn を押しています。"
-        // Settings and About never open the microphone while this app is frontmost.
-        if ["設定", "アプリについて"].contains(selectedTab), NSWorkspace.shared.frontmostApplication?.processIdentifier == ProcessInfo.processInfo.processIdentifier { return }
-        guard !busy, !installing else { return }
-        guard modelReady, fnReady, pasteReady, autoPaste else {
-            notice = !modelReady ? "日本語モデルを準備してください。" : "Fn入力の準備が必要です。①Fnキーの検知 ②自動貼り付けの許可を設定してください。"
-            selectedTab = "設定"; showWindow(); return
+        refreshInputPermissions()
+        let ownSettingsFrontmost = ["設定", "アプリについて"].contains(selectedTab)
+            && NSWorkspace.shared.frontmostApplication?.processIdentifier == ProcessInfo.processInfo.processIdentifier
+        switch FnStartPolicy.action(enabled: fnEnabled, busy: busy, installing: installing,
+                                    ownSettingsFrontmost: ownSettingsFrontmost, modelReady: modelReady,
+                                    pasteAllowed: pasteReady, autoPasteEnabled: autoPaste) {
+        case .ignore: return
+        case .prepareSpeechModel:
+            notice = "まだ録音を開始できません。入力画面の「日本語モデルを準備」を押してください。"
+            selectedTab = "入力"; showWindow(); return
+        case .record:
+            break
         }
         guard holdRecording.begin(canStart: true) else { return }
         recordingFromFn = true
@@ -130,7 +145,12 @@ enum RecordingPhase: String {
         fnLastEvent = "Fnキーの検知が中断されたため、録音をキャンセルしました。"
     }
 
-    override init() {
+    override convenience init() {
+        self.init(speechModel: .live)
+    }
+
+    init(speechModel: SpeechModelAccess) {
+        self.speechModel = speechModel
         super.init()
         if let data = UserDefaults.standard.data(forKey: "dictionary"),
            let entries = try? JSONDecoder().decode([DictionaryEntry].self, from: data) {
@@ -139,10 +159,9 @@ enum RecordingPhase: String {
     }
 
     func refresh() async {
-        modelStatus = await SpeechService.status()
-        if let module = try? await SpeechService.module() {
-            modelReady = await Speech.AssetInventory.status(forModules: [module]) == .installed
-        }
+        let readiness = await speechModel.read()
+        modelStatus = readiness.status
+        modelReady = readiness.ready
         llmStatus = SpeechService.refinementStatus
         prewarm()
     }
@@ -158,7 +177,7 @@ enum RecordingPhase: String {
         installing = true
         notice = "日本語モデルをAppleからダウンロードします。音声は送信しません。"
         work = Task {
-            do { try await SpeechService.install(); notice = "日本語モデルの準備ができました。" }
+            do { try await speechModel.install(); notice = "日本語モデルの準備ができました。入力画面で試せます。" }
             catch { notice = "モデルを準備できませんでした: \(error.localizedDescription)" }
             installing = false
             await refresh()
@@ -168,10 +187,15 @@ enum RecordingPhase: String {
     func toggle(fromShortcut: Bool = false) {
         if phase == .recording { stop(); return }
         guard !busy, !installing else { return }
-        guard modelReady else { selectedTab = "設定"; notice = "先に日本語モデルを準備してください。"; showWindow(); return }
+        guard modelReady else { selectedTab = "入力"; notice = "入力画面の「日本語モデルを準備」を押してください。"; showWindow(); return }
+        refreshInputPermissions()
         target = fromShortcut ? NSWorkspace.shared.frontmostApplication : nil
         focusedAtStart = target.flatMap { Self.focusedElement(in: $0) }
-        pasteThisRecording = fromShortcut && target?.processIdentifier != ProcessInfo.processInfo.processIdentifier
+        let externalInput = fromShortcut && target?.processIdentifier != ProcessInfo.processInfo.processIdentifier
+        pasteThisRecording = externalInput && canAutomaticallyPaste
+        displayOnlyReason = externalInput && autoPaste && !pasteReady
+            ? "文字起こしができました。自動貼り付けの許可がないため、ここに表示しています。コピーして入力先へ貼り付けるか、「貼り付けを許可する」を押してください。"
+            : "文字起こしができました。内容を確認してコピーできます。"
         phase = .preparing
         notice = ""
         livePreview = ""
@@ -181,11 +205,13 @@ enum RecordingPhase: String {
         sessionID = id
         work = Task { [self] in
             let allowed = await AVCaptureDevice.requestAccess(for: .audio)
+            refreshInputPermissions()
             guard !Task.isCancelled, sessionID == id else { return }
             guard allowed else {
                 phase = .idle
                 holdRecording.reset(); recordingFromFn = false
                 notice = "マイクが許可されていません。「システム設定 → プライバシーとセキュリティ → マイク」でこえのたねを許可してください。"
+                selectedTab = "入力"
                 showWindow()
                 return
             }
@@ -264,7 +290,8 @@ enum RecordingPhase: String {
                 if shouldPaste && notice.isEmpty {
                     await paste(into: destination)
                 } else {
-                    if notice.isEmpty { notice = "文字起こしができました。内容を確認してコピーできます。" }
+                    if notice.isEmpty { notice = displayOnlyReason }
+                    selectedTab = "入力"
                     showWindow()
                 }
             } catch is CancellationError { notice = "録音をキャンセルしました。" }
@@ -290,6 +317,7 @@ enum RecordingPhase: String {
         livePreview = ""; phase = .idle; hud?.hide()
         holdRecording.reset(); recordingFromFn = false
         notice = error.localizedDescription
+        selectedTab = "入力"
         showWindow()
         prewarm()
     }
@@ -349,6 +377,18 @@ enum RecordingPhase: String {
         refreshInputPermissions()
     }
 
+    func requestMicrophonePermission() {
+        guard !busy else { return }
+        if microphoneStatus == .denied || microphoneStatus == .restricted {
+            NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone")!)
+            return
+        }
+        Task {
+            _ = await AVCaptureDevice.requestAccess(for: .audio)
+            refreshInputPermissions()
+        }
+    }
+
     private static func focusedElement(in app: NSRunningApplication) -> AXUIElement? {
         guard AXIsProcessTrusted() else { return nil }
         var value: CFTypeRef?
@@ -358,8 +398,9 @@ enum RecordingPhase: String {
     }
 
     func showWindow() {
-        NSApp.activate(ignoringOtherApps: true)
-        NSApp.windows.first(where: { $0.identifier?.rawValue == "main" || $0.title == "こえのたね" })?.makeKeyAndOrderFront(nil)
+        guard let application = NSApp else { return }
+        application.activate(ignoringOtherApps: true)
+        application.windows.first(where: { $0.identifier?.rawValue == "main" || $0.title == "こえのたね" })?.makeKeyAndOrderFront(nil)
     }
 
     func importAudio() {

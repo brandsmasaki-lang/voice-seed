@@ -7,6 +7,17 @@ enum VoiceError: LocalizedError {
     var errorDescription: String? { if case .message(let text) = self { return text }; return nil }
 }
 
+struct SpeechModelReadiness {
+    let ready: Bool
+    let status: String
+}
+
+struct SpeechModelAccess {
+    let read: @MainActor () async -> SpeechModelReadiness
+    let install: @MainActor () async throws -> Void
+    static let live = Self(read: { await SpeechService.readiness() }, install: { try await SpeechService.install() })
+}
+
 enum SpeechService {
     static func module() async throws -> SpeechTranscriber {
         guard SpeechTranscriber.isAvailable,
@@ -17,16 +28,20 @@ enum SpeechService {
     }
 
     static func status() async -> String {
+        await readiness().status
+    }
+
+    static func readiness() async -> SpeechModelReadiness {
         do {
             let transcriber = try await module()
             switch await AssetInventory.status(forModules: [transcriber]) {
-            case .installed: return "日本語モデルの準備完了"
-            case .downloading: return "日本語モデルをダウンロード中"
-            case .supported: return "日本語モデルの初回ダウンロードが必要です"
-            case .unsupported: return "日本語モデルを利用できません"
-            @unknown default: return "モデルの状態を確認できません"
+            case .installed: return SpeechModelReadiness(ready: true, status: "日本語モデルの準備完了")
+            case .downloading: return SpeechModelReadiness(ready: false, status: "日本語モデルをダウンロード中")
+            case .supported: return SpeechModelReadiness(ready: false, status: "日本語モデルの初回ダウンロードが必要です")
+            case .unsupported: return SpeechModelReadiness(ready: false, status: "日本語モデルを利用できません")
+            @unknown default: return SpeechModelReadiness(ready: false, status: "モデルの状態を確認できません")
             }
-        } catch { return error.localizedDescription }
+        } catch { return SpeechModelReadiness(ready: false, status: error.localizedDescription) }
     }
 
     static func install() async throws {
