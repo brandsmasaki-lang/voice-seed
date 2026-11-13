@@ -61,6 +61,6 @@ test-core.shはiOS SDKやXCTestを持たないAppleシリコンMacでも、合�
 
 ## 現在の検証状態
 
-共通処理の合成データテストと、Mac SDKで利用できる音声認識APIの型検査を実行しています。iPhone向けビルドは専用のGitHub Actionsで検証します。iPhone実機の精度・速度・キーボード連携は未確認です。App Storeで配布済みのiPhone版ではありません。
+共有処理36項目、XCTest、かな漢字変換辞書の検証と、アプリ本体・埋め込みキーボードのiOS Simulatorビルドが成功しています。iPhone 16 Pro Maxの独立したシミュレータで初期画面の起動も確認しました。[検証実行](https://github.com/brandsmasaki-lang/voice-seed/actions/runs/43526141966)。iPhone実機の精度・速度・キーボード連携は未確認です。App Storeで配布済みのiPhone版ではありません。
 
 コードはルートのMITライセンスに従います。変換エンジン・辞書・依存ライブラリはTHIRD_PARTY_NOTICES.txtに権利表示を含めます。

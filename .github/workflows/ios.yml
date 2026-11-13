@@ -42,6 +42,7 @@ jobs:
           path: |
             iOS/.build/smoke/
             iOS/VoiceSeed.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved
+          include-hidden-files: true
           retention-days: 7
       - name: Build log on failure
         if: failure()

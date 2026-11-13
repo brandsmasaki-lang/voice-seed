@@ -1,7 +1,7 @@
 {
   ".github/ISSUE_TEMPLATE/bug_report.yml": "e3354698adef286f47c2705d4adbe45398774eb531dd56349a1bf8a2568e13a0",
   ".github/workflows/ci.yml": "563cf81f7eeb96c91b360996522577a12e6cf7539d680b25bf507fae18f4573c",
-  ".github/workflows/ios.yml": "75d7e68e40520de1aaed6db1c1c361555fef011c43707c27a48d5c397da418da",
+  ".github/workflows/ios.yml": "dfab2b0b3d53970b8d8d3e65fec41401d4fabc24b7fd791feaa703c6cec4eb12",
   ".gitignore": "ec2d5c78b0b8db762b3d86dbce2a8959972887b6ed39a5fea6b617e2fe4ce57c",
   "CHANGELOG.md": "83b772e659da94343a115f0149cb155f7947bbb9e75102b55c96ba81ed953b50",
   "CONTRIBUTING.md": "0abaf3c0081f0b7a46af221a66d3d650fb99eafd3539e2d923dd3691d52483a8",
@@ -86,7 +86,7 @@
   "iOS/Keyboard/KanaFlickKey.swift": "694dd43ca4c74472c973561c272c392a5fe1b9a943c0cc1e809d19a4b1001dc4",
   "iOS/Keyboard/KeyboardViewController.swift": "2ffcfa36cbfd03a8769e1abbfd1b2ab1ade82f59a0728bdbce729fca7158b9e6",
   "iOS/Package.swift": "4a12beca26f3dde30451703cf40a4b2bb955bd0fa075672aee04303401d44740",
-  "iOS/README.md": "4ea04846a20474b0af63e46102fb0c3692d2872550a6b9bc3014f47ae42515f8",
+  "iOS/README.md": "62d64d7c6d9b6cf5f69a2ec806b7994744c5ecda809dc447ae66a4b9cdc66443",
   "iOS/Scripts/check-build.py": "feb9f267a765d4edc4316a96ab6975d31ce49294974e0ea844d29a56086003eb",
   "iOS/Scripts/generate-project.py": "7559401355af49d5f5b17051bad1b47f7dbcbc7450522d1185367d41bd5be45b",
   "iOS/Scripts/simulator-smoke.sh": "116b9c5577aed37244b473c8b7352788b2e0e718b3877d192b17f9f2bda27ad9",
