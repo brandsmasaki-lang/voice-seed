@@ -5,7 +5,7 @@ import UIKit
     private let label = UILabel()
     private let hint = UILabel()
     private var origin = CGPoint.zero
-    private var selected = 0
+    private var selectedIndex = 0
     var onCharacter: ((String) -> Void)?
 
     init(values: [String]) {
@@ -25,17 +25,17 @@ import UIKit
     }
     required init?(coder: NSCoder) { fatalError("init(coder:) is not used") }
     override func beginTracking(_ touch: UITouch, with event: UIEvent?) -> Bool {
-        origin = touch.location(in: self); selected = 0
+        origin = touch.location(in: self); selectedIndex = 0
         backgroundColor = .systemGray3; return true
     }
     override func continueTracking(_ touch: UITouch, with event: UIEvent?) -> Bool {
         let point = touch.location(in: self)
-        selected = values.count > 1 ? KanaLayout.index(dx: point.x - origin.x, dy: point.y - origin.y) : 0
-        label.text = values[selected]; hint.text = selected == 0 && values.count == 5 ? values.dropFirst().joined(separator: " ") : ""
+        selectedIndex = values.count > 1 ? KanaLayout.index(dx: point.x - origin.x, dy: point.y - origin.y) : 0
+        label.text = values[selectedIndex]; hint.text = selectedIndex == 0 && values.count == 5 ? values.dropFirst().joined(separator: " ") : ""
         return true
     }
     override func endTracking(_ touch: UITouch?, with event: UIEvent?) {
-        onCharacter?(values[selected]); reset()
+        onCharacter?(values[selectedIndex]); reset()
     }
     override func cancelTracking(with event: UIEvent?) { reset() }
     override func accessibilityActivate() -> Bool { onCharacter?(values[0]); return true }

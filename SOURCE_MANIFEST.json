@@ -82,7 +82,7 @@
   "iOS/CoreTests/SessionTests.swift": "501b992aac7c0ad67e3aeb41efa443b870f9f1005bfc86eb43756cfa4ee9a8d6",
   "iOS/CoreTests/StoreTests.swift": "45de84489d309782cb88f8b41c847989b8c03ab5bcd92bb5bb008d364ff6e929",
   "iOS/Keyboard/JapaneseComposer.swift": "c0fb351bcf13d15b18272e08afd3a8b8f4537d5b449132cfd1263277f42b9554",
-  "iOS/Keyboard/KanaFlickKey.swift": "43aab16fb6673a3de7b172ef242a025f25ac44acdd48555a34166473c4186439",
+  "iOS/Keyboard/KanaFlickKey.swift": "694dd43ca4c74472c973561c272c392a5fe1b9a943c0cc1e809d19a4b1001dc4",
   "iOS/Keyboard/KeyboardViewController.swift": "2ffcfa36cbfd03a8769e1abbfd1b2ab1ade82f59a0728bdbce729fca7158b9e6",
   "iOS/Package.swift": "36c00b80554ae9bf8c80fbd1639fb817adc5525929805d9399c4a19ee74385bd",
   "iOS/README.md": "4ea04846a20474b0af63e46102fb0c3692d2872550a6b9bc3014f47ae42515f8",
