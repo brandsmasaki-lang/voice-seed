@@ -9,6 +9,10 @@ import KanaKanjiConverterModuleWithDefaultDictionary
     var isEmpty: Bool { reading.isEmpty }
 
     func append(_ text: String) { reading += text; refresh() }
+    func replaceLast(_ text: String) {
+        if !reading.isEmpty { reading.removeLast() }
+        reading += text; refresh()
+    }
     func delete() { if !reading.isEmpty { reading.removeLast() }; refresh() }
     func alternateLast() {
         guard let last = reading.last else { return }

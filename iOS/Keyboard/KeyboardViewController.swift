@@ -3,9 +3,10 @@ import SwiftUI
 import AppIntents
 
 private struct ActivateKeyboardButton: View {
+    var documentID = ""
     var body: some View {
-        Button(intent: ActivateDictationIntent()) {
-            Label("マイクを準備", systemImage: "mic.fill").font(.system(size: 14, weight: .semibold))
+        Button(intent: ActivateDictationIntent(documentID: documentID)) {
+            Label("タップして話す", systemImage: "mic").font(.system(size: 14, weight: .semibold))
                 .padding(.horizontal, 14).padding(.vertical, 8)
         }.buttonStyle(.plain).foregroundStyle(.white).background(.black.opacity(0.8), in: Capsule())
     }
@@ -30,6 +31,7 @@ final class KeyboardViewController: UIInputViewController {
     private let notice = UILabel()
     private let globe = UIButton(type: .system)
     private let composer = JapaneseComposer()
+    private var tapCycle = KanaTapCycle()
     private var store: SharedSessionStore?
     private var snapshot = SessionSnapshot()
     private var timer: Timer?
@@ -50,7 +52,7 @@ final class KeyboardViewController: UIInputViewController {
         root.axis = .vertical; root.spacing = 6; root.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(root)
         NSLayoutConstraint.activate([
-            view.heightAnchor.constraint(equalToConstant: 326),
+            view.heightAnchor.constraint(equalToConstant: 344),
             root.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 6),
             root.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -6),
             root.topAnchor.constraint(equalTo: view.topAnchor, constant: 6),
@@ -78,8 +80,8 @@ final class KeyboardViewController: UIInputViewController {
         toolbar.addArrangedSubview(hide)
         toolbar.heightAnchor.constraint(equalToConstant: 36).isActive = true
         root.addArrangedSubview(toolbar)
-        notice.font = .systemFont(ofSize: 10); notice.textColor = .secondaryLabel; notice.numberOfLines = 1
-        notice.heightAnchor.constraint(equalToConstant: 14).isActive = true
+        notice.font = .systemFont(ofSize: 11); notice.textColor = .secondaryLabel; notice.numberOfLines = 2
+        notice.heightAnchor.constraint(equalToConstant: 32).isActive = true
         root.addArrangedSubview(notice)
         candidates.axis = .horizontal; candidates.spacing = 8
         candidateScroll.addSubview(candidates); candidates.translatesAutoresizingMaskIntoConstraints = false
@@ -112,7 +114,8 @@ final class KeyboardViewController: UIInputViewController {
     }
     override func viewWillAppear(_ animated: Bool) {
         super.viewWillAppear(animated)
-        focusID = UUID(); currentDocument = textDocumentProxy.documentIdentifier.uuidString; pending = nil
+        focusID = UUID(); currentDocument = textDocumentProxy.documentIdentifier.uuidString; pending = nil; tapCycle.reset()
+        activationHost?.rootView = ActivateKeyboardButton(documentID: currentDocument)
         do { store = try AppGroupContainer.open() } catch { notice.text = error.localizedDescription }
         refresh()
         timer?.invalidate()
@@ -130,11 +133,13 @@ final class KeyboardViewController: UIInputViewController {
         guard !inserting else { return }
         let document = textDocumentProxy.documentIdentifier.uuidString
         if document != currentDocument {
-            cancelPending(); composer.clear(); updateCandidates(); focusID = UUID(); currentDocument = document
+            cancelPending(); tapCycle.reset(); composer.clear(); updateCandidates(); focusID = UUID(); currentDocument = document
+            activationHost?.rootView = ActivateKeyboardButton(documentID: document)
         }
     }
     override func selectionDidChange(_ textInput: (any UITextInput)?) {
         super.selectionDidChange(textInput)
+        if !inserting { tapCycle.reset() }
         if !inserting, pending != nil { cancelPending() }
     }
 
@@ -148,6 +153,20 @@ final class KeyboardViewController: UIInputViewController {
         if store == nil { store = try? AppGroupContainer.open() }
         do {
             if let store { snapshot = try store.read() }
+            if pending == nil, snapshot.keyboardLaunch != nil, snapshot.phase == .ready, let store {
+                let document = textDocumentProxy.documentIdentifier.uuidString
+                // Claim and queue in one transaction, bound to the original field.
+                let request: CaptureRequest? = try store.update { state in
+                    guard state.commands.count < 16,
+                          state.claimKeyboardLaunch(documentID: document, at: Date()),
+                          let sessionID = state.sessionID else { return nil }
+                    let request = CaptureRequest(id: UUID(), sessionID: sessionID, focusID: focusID,
+                        documentID: document, startedAt: Date())
+                    state.commands.append(.init(kind: .start, request: request))
+                    return request
+                }
+                if let request { commit(); pending = request }
+            }
             composer.dictionary = snapshot.settings.dictionary
             let live = snapshot.isLive(at: Date())
             activationHost?.view.isHidden = live
@@ -166,7 +185,7 @@ final class KeyboardViewController: UIInputViewController {
             speechButton.setTitleColor(.systemBackground, for: .normal)
             speechButton.isEnabled = [.ready, .listening, .processing].contains(snapshot.phase)
                 && !(snapshot.phase == .ready && pending != nil)
-            notice.text = !snapshot.preview.isEmpty ? snapshot.preview : live ? "端末内で認識・テンキーでそのまま修正できます" : "最初に本体でマイクを準備し、この入力欄に戻ってください"
+            notice.text = !snapshot.preview.isEmpty ? snapshot.preview : snapshot.keyboardGuidance(at: Date())
             if let pending, let store {
                 guard pending.sessionID == snapshot.sessionID else { self.pending = nil; return }
                 let document = textDocumentProxy.documentIdentifier.uuidString
@@ -252,8 +271,9 @@ final class KeyboardViewController: UIInputViewController {
             for groups in KanaLayout.rows {
                 middle.addArrangedSubview(row(groups.map { values in
                     let button = KanaFlickKey(values: values)
-                    button.onCharacter = { [weak self] text in
-                        if text == "゛゜小" { self?.alternate() } else { self?.typeKana(text) }
+                    button.onInput = { [weak self] values, index in
+                        if values[index] == "゛゜小" { self?.alternate() }
+                        else { self?.typeKana(values: values, index: index) }
                     }; return button
                 }))
             }
@@ -299,18 +319,25 @@ final class KeyboardViewController: UIInputViewController {
         }
     }
     private func switchMode(_ next: Mode) { commit(); mode = next; buildKeys() }
-    private func typeKana(_ text: String) {
+    private func typeKana(values: [String], index: Int) {
         cancelPending()
-        if composer.reading.count >= 80 { commit() }
-        composer.append(text); setMarked(); updateCandidates()
+        let edit = tapCycle.resolve(values: values, selectedIndex: index,
+            at: ProcessInfo.processInfo.systemUptime, currentLast: composer.reading.last.map(String.init))
+        if edit.replacesLast { composer.replaceLast(edit.text) }
+        else {
+            if composer.reading.count >= 80 { commit() }
+            composer.append(edit.text)
+        }
+        setMarked(); updateCandidates()
     }
-    private func alternate() { cancelPending(); composer.alternateLast(); setMarked(); updateCandidates() }
+    private func alternate() { cancelPending(); tapCycle.reset(); composer.alternateLast(); setMarked(); updateCandidates() }
     private func setMarked() {
         inserting = true
         textDocumentProxy.setMarkedText(composer.reading, selectedRange: NSRange(location: composer.reading.utf16.count, length: 0))
         inserting = false
     }
     private func commit(_ candidate: String? = nil) {
+        tapCycle.reset()
         guard !composer.isEmpty else { return }
         inserting = true
         textDocumentProxy.setMarkedText(candidate ?? composer.reading, selectedRange: NSRange(location: (candidate ?? composer.reading).utf16.count, length: 0))
@@ -321,7 +348,7 @@ final class KeyboardViewController: UIInputViewController {
         cancelPending(); commit(); inserting = true; textDocumentProxy.insertText(value); inserting = false
     }
     private func delete() {
-        cancelPending()
+        cancelPending(); tapCycle.reset()
         if !composer.isEmpty { composer.delete(); setMarked(); updateCandidates(); if composer.isEmpty { textDocumentProxy.unmarkText() } }
         else { inserting = true; textDocumentProxy.deleteBackward(); inserting = false }
     }

@@ -9,6 +9,7 @@ import UIKit
     @Published var errorMessage = ""
     @Published var selectedTab = 0
     @Published var showSetup = false
+    @Published var showKeyboardReturn = false
     private var store: SharedSessionStore?
     private let microphone = MicrophoneSession()
     private var prepared: OnDeviceCapture?
@@ -78,7 +79,13 @@ import UIKit
             if let command = try store.nextCommand(at: Date()) {
                 IOSPreparationTrace.step("command." + command.kind.rawValue)
                 switch command.kind {
-                case .activate: await activate()
+                case .activate:
+                    selectedTab = 0
+                    showKeyboardReturn = command.keyboardLaunch != nil
+                    await activate()
+                    if state.phase == .ready, let launch = command.keyboardLaunch {
+                        try update { $0.keyboardLaunch = launch }
+                    }
                 case .start:
                     if let request = command.request { start(request) }
                 case .stop:
@@ -150,6 +157,7 @@ import UIKit
                 if state.request?.id != request.id { try update { $0.finishWithoutDelivery(request.id) } }
                 return
             }
+            showKeyboardReturn = false
             if synthetic { try update { $0.preview = "明日の打ち合わせは午後3時からです。" }; return }
             guard let capture = prepared else {
                 try update { $0.finishWithoutDelivery(request.id); $0.phase = .preparing }
@@ -259,6 +267,7 @@ import UIKit
     }
 
     func disconnect(message: String = "") {
+        showKeyboardReturn = false
         generation = UUID(); finishing?.cancel(); finishing = nil
         microphone.attach(nil); active?.cancel(); prepared?.cancel(); active = nil; prepared = nil
         processingCapture?.cancel(); processingCapture = nil

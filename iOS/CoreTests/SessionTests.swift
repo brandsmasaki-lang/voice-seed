@@ -181,3 +181,26 @@ extension SessionTests {
         XCTAssertEqual(decoded.phase, .ready)
     }
 }
+
+extension SessionTests {
+    func testKeyboardLaunchWaitsForOriginalFieldAndCanOnlyBeClaimedOnce() {
+        var state = prepared()
+        state.keyboardLaunch = .init(documentID: "original-note", createdAt: now)
+        XCTAssertFalse(state.claimKeyboardLaunch(documentID: "another-note", at: now))
+        XCTAssertNotNil(state.keyboardLaunch)
+        state.phase = .preparing
+        XCTAssertFalse(state.claimKeyboardLaunch(documentID: "original-note", at: now))
+        state.phase = .ready
+        XCTAssertTrue(state.claimKeyboardLaunch(documentID: "original-note", at: now))
+        XCTAssertFalse(state.claimKeyboardLaunch(documentID: "original-note", at: now))
+    }
+    func testExpiredOrDisconnectedKeyboardLaunchCannotStartLater() {
+        var state = prepared()
+        state.keyboardLaunch = .init(documentID: "original-note", createdAt: now.addingTimeInterval(-61))
+        XCTAssertFalse(state.claimKeyboardLaunch(documentID: "original-note", at: now))
+        XCTAssertNil(state.keyboardLaunch)
+        state.keyboardLaunch = .init(documentID: "original-note", createdAt: now)
+        state.disconnect()
+        XCTAssertNil(state.keyboardLaunch)
+    }
+}

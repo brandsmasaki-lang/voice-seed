@@ -37,7 +37,7 @@ final class StoreTests: XCTestCase {
         try store.enqueue(command); try store.enqueue(command)
         XCTAssertEqual(try store.nextCommand(at: now)?.id, command.id)
         XCTAssertNil(try store.nextCommand(at: now))
-        try store.enqueue(.init(kind: .activate, createdAt: now.addingTimeInterval(-11)))
+        try store.enqueue(.init(kind: .activate, createdAt: now.addingTimeInterval(-61)))
         XCTAssertNil(try store.nextCommand(at: now))
     }
     func testQueueIsBoundedAndHistoryFileIsPrivate() throws {
@@ -46,5 +46,18 @@ final class StoreTests: XCTestCase {
         XCTAssertThrowsError(try store.enqueue(.init(kind: .activate)))
         let attributes = try FileManager.default.attributesOfItem(atPath: url.appendingPathComponent("session.json").path)
         XCTAssertEqual((attributes[.posixPermissions] as? NSNumber)?.intValue, 0o600)
+    }
+}
+
+extension StoreTests {
+    func testColdLaunchGetsGraceButOldAudioCommandsDoNot() throws {
+        let (url, store) = try fixture(); defer { try? FileManager.default.removeItem(at: url) }
+        let now = Date()
+        let command = SessionCommand(kind: .activate, createdAt: now.addingTimeInterval(-20),
+            keyboardLaunch: .init(documentID: "synthetic-note", createdAt: now.addingTimeInterval(-20)))
+        try store.enqueue(command)
+        XCTAssertEqual(try store.nextCommand(at: now)?.keyboardLaunch?.documentID, "synthetic-note")
+        try store.enqueue(.init(kind: .start, createdAt: now.addingTimeInterval(-11)))
+        XCTAssertNil(try store.nextCommand(at: now))
     }
 }

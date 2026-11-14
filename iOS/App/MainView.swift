@@ -16,6 +16,11 @@ struct MainView: View {
         .fullScreenCover(isPresented: $model.showSetup) {
             SetupFlow { completedSetup = true; model.showSetup = false }
         }
+        .fullScreenCover(isPresented: Binding(
+            get: { model.showKeyboardReturn && completedSetup },
+            set: { if !$0 { model.showKeyboardReturn = false } })) {
+                KeyboardReturnView().environmentObject(model)
+        }
         .alert("こえのたね", isPresented: Binding(get: { !model.errorMessage.isEmpty }, set: { if !$0 { model.errorMessage = "" } })) {
             Button("閉じる") { model.errorMessage = "" }
         } message: { Text(model.errorMessage) }
@@ -222,5 +227,35 @@ struct VoiceSeedSettings: View {
             return "権利表示はソースのiOS/THIRD_PARTY_NOTICES.txtをご確認ください。"
         }
         return text
+    }
+}
+
+private struct KeyboardReturnView: View {
+    @EnvironmentObject private var model: DictationModel
+    var body: some View {
+        VStack(spacing: 28) {
+            Spacer()
+            Image("BrandIcon").resizable().frame(width: 80, height: 80)
+                .clipShape(RoundedRectangle(cornerRadius: 20))
+            if model.state.phase == .ready {
+                Image(systemName: "hand.draw.fill").font(.system(size: 64)).foregroundStyle(.tint)
+                Text("画面の下端を右へスワイプ").font(.title2.bold()).multilineTextAlignment(.center)
+                Text("直前のアプリへ戻ると、聞き取りが始まります。\nマイクを押し直す必要はありません。")
+                    .multilineTextAlignment(.center).foregroundStyle(.secondary)
+                HStack(spacing: 14) {
+                    Capsule().frame(width: 92, height: 6)
+                    Image(systemName: "arrow.right").font(.title2.bold())
+                }.padding(24).background(.quaternary, in: RoundedRectangle(cornerRadius: 24))
+            } else if !model.errorMessage.isEmpty {
+                Text(model.errorMessage).multilineTextAlignment(.center)
+            } else {
+                ProgressView().controlSize(.large)
+                Text("マイクに接続しています…").font(.title2.bold())
+            }
+            Spacer()
+            Button("音声入力をやめる") { model.disconnect() }.padding(.bottom, 40)
+        }.padding(28).frame(maxWidth: .infinity, maxHeight: .infinity)
+            .background(Color(uiColor: .systemBackground))
+            .accessibilityIdentifier("keyboard-return-screen")
     }
 }

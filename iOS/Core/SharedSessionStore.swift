@@ -101,7 +101,10 @@ final class SharedSessionStore: @unchecked Sendable {
                 value.handledCommandIDs.append(next.id)
                 value.handledCommandIDs = Array(value.handledCommandIDs.suffix(32))
                 let age = now.timeIntervalSince(next.createdAt)
-                if age >= -1 && age <= 10 { return next }
+                // Cold app/model initialization can take longer than an ordinary
+                // start/stop command. Only explicit foreground activation gets grace.
+                let maximumAge: TimeInterval = next.kind == .activate ? 60 : 10
+                if age >= -1 && age <= maximumAge { return next }
             }
             return nil
         }

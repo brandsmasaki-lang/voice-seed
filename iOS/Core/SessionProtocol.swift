@@ -30,6 +30,13 @@ struct SessionCommand: Codable, Equatable, Sendable, Identifiable {
     var kind: Kind
     var createdAt = Date()
     var request: CaptureRequest?
+    var keyboardLaunch: KeyboardLaunch?
+}
+
+struct KeyboardLaunch: Codable, Equatable, Sendable {
+    var id = UUID()
+    var documentID: String
+    var createdAt: Date
 }
 
 struct DictationMetrics: Codable, Equatable, Sendable {
@@ -76,6 +83,7 @@ struct SessionSnapshot: Codable, Equatable, Sendable {
     var preview = ""
     // Optional for compatibility with snapshots written by earlier builds.
     var finishedRequestID: UUID?
+    var keyboardLaunch: KeyboardLaunch?
     var level: Double = 0
     var message = ""
     var commands: [SessionCommand] = []
@@ -90,6 +98,23 @@ struct SessionSnapshot: Codable, Equatable, Sendable {
               phase != .inactive, phase != .failed, now < expiresAt else { return false }
         let age = now.timeIntervalSince(heartbeat)
         return age >= -1 && age <= 2
+    }
+
+    func keyboardGuidance(at now: Date) -> String {
+        if isLive(at: now) {
+            if phase == .preparing { return "マイクに接続しています…" }
+            return "このまま話せます。タップで開始・もう一度タップで入力。"
+        }
+        return "マイクを押すと、こえのたねが一度開きます。戻ると聞き取りが始まります。"
+    }
+
+    mutating func claimKeyboardLaunch(documentID: String, at now: Date) -> Bool {
+        guard let launch = keyboardLaunch else { return false }
+        let age = now.timeIntervalSince(launch.createdAt)
+        guard age >= -1 && age <= 60 else { keyboardLaunch = nil; return false }
+        guard phase == .ready, isLive(at: now), launch.documentID == documentID else { return false }
+        keyboardLaunch = nil
+        return true
     }
 
     mutating func renewStandby(at now: Date) {
@@ -111,7 +136,7 @@ struct SessionSnapshot: Codable, Equatable, Sendable {
 
     mutating func disconnect(message: String = "") {
         phase = .inactive; sessionID = nil; heartbeat = nil; expiresAt = nil
-        request = nil; preview = ""; level = 0; self.message = message
+        request = nil; keyboardLaunch = nil; preview = ""; level = 0; self.message = message
         // Keep completed text available for manual recovery, never auto-insert it again.
         if delivery?.status == .pending { delivery?.status = .focusChanged }
     }

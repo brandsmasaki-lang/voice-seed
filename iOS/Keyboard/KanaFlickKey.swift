@@ -6,7 +6,7 @@ import UIKit
     private let hint = UILabel()
     private var origin = CGPoint.zero
     private var selectedIndex = 0
-    var onCharacter: ((String) -> Void)?
+    var onInput: (([String], Int) -> Void)?
 
     init(values: [String]) {
         self.values = values; super.init(frame: .zero)
@@ -20,7 +20,7 @@ import UIKit
         stack.isUserInteractionEnabled = false; stack.translatesAutoresizingMaskIntoConstraints = false
         addSubview(stack)
         NSLayoutConstraint.activate([stack.centerXAnchor.constraint(equalTo: centerXAnchor), stack.centerYAnchor.constraint(equalTo: centerYAnchor), stack.widthAnchor.constraint(lessThanOrEqualTo: widthAnchor, constant: -4)])
-        accessibilityLabel = values[0] + (values.count > 1 ? "、フリックで" + values.dropFirst().joined(separator: "、") : "")
+        accessibilityLabel = values[0] + (values.count > 1 ? "、連打またはフリックで" + values.dropFirst().joined(separator: "、") : "")
         accessibilityTraits = .keyboardKey
     }
     required init?(coder: NSCoder) { fatalError("init(coder:) is not used") }
@@ -35,10 +35,10 @@ import UIKit
         return true
     }
     override func endTracking(_ touch: UITouch?, with event: UIEvent?) {
-        onCharacter?(values[selectedIndex]); reset()
+        onInput?(values, selectedIndex); reset()
     }
     override func cancelTracking(with event: UIEvent?) { reset() }
-    override func accessibilityActivate() -> Bool { onCharacter?(values[0]); return true }
+    override func accessibilityActivate() -> Bool { onInput?(values, 0); return true }
     private func reset() {
         label.text = values[0]; hint.text = values.count == 5 ? values.dropFirst().joined(separator: " ") : ""
         backgroundColor = .secondarySystemGroupedBackground
