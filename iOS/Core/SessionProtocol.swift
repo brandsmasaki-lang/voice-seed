@@ -37,6 +37,7 @@ struct KeyboardLaunch: Codable, Equatable, Sendable {
     var id = UUID()
     var documentID: String
     var createdAt: Date
+    var keyboardID: UUID?
 }
 
 struct DictationMetrics: Codable, Equatable, Sendable {
@@ -86,6 +87,7 @@ struct SessionSnapshot: Codable, Equatable, Sendable {
     var keyboardLaunch: KeyboardLaunch?
     var level: Double = 0
     var keyboardActivationTicket: KeyboardLaunch?
+    var hostIsForeground: Bool?
     var message = ""
     var commands: [SessionCommand] = []
     var handledCommandIDs: [UUID] = []
@@ -109,11 +111,18 @@ struct SessionSnapshot: Codable, Equatable, Sendable {
         return "マイクを押すと、こえのたねが一度開きます。戻ると聞き取りが始まります。"
     }
 
-    mutating func claimKeyboardLaunch(documentID: String, at now: Date) -> Bool {
+    mutating func claimKeyboardLaunch(documentID: String, keyboardID: UUID? = nil, at now: Date) -> Bool {
         guard let launch = keyboardLaunch else { return false }
         let age = now.timeIntervalSince(launch.createdAt)
         guard age >= -1 && age <= 60 else { keyboardLaunch = nil; return false }
-        guard phase == .ready, isLive(at: now), launch.documentID == documentID else { return false }
+        guard phase == .ready, isLive(at: now), hostIsForeground != true else { return false }
+        // A document proxy may be recreated when the host application resumes.
+        // Only the keyboard instance that issued the launch can rebind it.
+        if let owner = launch.keyboardID {
+            guard owner == keyboardID else { return false }
+        } else {
+            guard launch.documentID == documentID else { return false }
+        }
         keyboardLaunch = nil
         return true
     }

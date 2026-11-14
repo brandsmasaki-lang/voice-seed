@@ -36,6 +36,9 @@ final class KeyboardViewController: UIInputViewController {
     private var timer: Timer?
     private var pending: CaptureRequest?
     private var activationTicket: KeyboardLaunch?
+    private let keyboardID = UUID()
+    private var isVisible = false
+    private var focusSettlesAt: TimeInterval = 0
     private var focusID = UUID()
     private var currentDocument = ""
     private var inserting = false
@@ -124,22 +127,30 @@ final class KeyboardViewController: UIInputViewController {
         }
     }
     override func viewWillDisappear(_ animated: Bool) {
+        isVisible = false
         commit(); cancelPending(); focusID = UUID()
         timer?.invalidate(); timer = nil
         super.viewWillDisappear(animated)
+    }
+    override func viewDidAppear(_ animated: Bool) {
+        super.viewDidAppear(animated)
+        isVisible = true
+        focusSettlesAt = ProcessInfo.processInfo.systemUptime + 0.2
+        refresh()
     }
     override func textDidChange(_ textInput: (any UITextInput)?) {
         super.textDidChange(textInput)
         guard !inserting else { return }
         let document = textDocumentProxy.documentIdentifier.uuidString
         if document != currentDocument {
+            focusSettlesAt = ProcessInfo.processInfo.systemUptime + 0.2
             cancelPending(); tapCycle.reset(); composer.clear(); updateCandidates(); focusID = UUID(); currentDocument = document
             activationTicket = nil
         }
     }
     override func selectionDidChange(_ textInput: (any UITextInput)?) {
         super.selectionDidChange(textInput)
-        if !inserting { tapCycle.reset() }
+        if !inserting { tapCycle.reset(); focusSettlesAt = ProcessInfo.processInfo.systemUptime + 0.2 }
         if !inserting, pending != nil { cancelPending() }
     }
 
@@ -154,17 +165,19 @@ final class KeyboardViewController: UIInputViewController {
         do {
             if let store { snapshot = try store.read() }
             if let store, activationTicket == nil || Date().timeIntervalSince(activationTicket!.createdAt) > 30 {
-                let ticket = KeyboardLaunch(documentID: textDocumentProxy.documentIdentifier.uuidString, createdAt: Date())
+                let ticket = KeyboardLaunch(documentID: textDocumentProxy.documentIdentifier.uuidString, createdAt: Date(), keyboardID: keyboardID)
                 try store.update { $0.keyboardActivationTicket = ticket }
                 activationTicket = ticket
                 activationHost?.rootView = ActivateKeyboardButton(destination: VoiceSeedLink.dictationURL(ticket: ticket.id))
             }
-            if pending == nil, snapshot.keyboardLaunch != nil, snapshot.phase == .ready, let store {
+            if isVisible, ProcessInfo.processInfo.systemUptime >= focusSettlesAt,
+               pending == nil, snapshot.keyboardLaunch != nil, snapshot.phase == .ready, let store {
                 let document = textDocumentProxy.documentIdentifier.uuidString
-                // Claim and queue in one transaction, bound to the original field.
+                // Resume only in the initiating keyboard after the app leaves
+                // the foreground; bind delivery to the current proxy and focus.
                 let request: CaptureRequest? = try store.update { state in
                     guard state.commands.count < 16,
-                          state.claimKeyboardLaunch(documentID: document, at: Date()),
+                          state.claimKeyboardLaunch(documentID: document, keyboardID: keyboardID, at: Date()),
                           let sessionID = state.sessionID else { return nil }
                     let request = CaptureRequest(id: UUID(), sessionID: sessionID, focusID: focusID,
                         documentID: document, startedAt: Date())

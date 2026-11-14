@@ -2,6 +2,18 @@ import XCTest
 @testable import VoiceSeedCore
 
 final class KeyboardEditingTests: XCTestCase {
+    func testKeyboardHandoffWaitsForReturnAndRebindsOnlyItsOwner() {
+        let now = Date(), owner = UUID()
+        var state = SessionSnapshot(); state.activate(at: now); state.phase = .ready
+        state.keyboardLaunch = .init(documentID: "before-switch", createdAt: now, keyboardID: owner)
+        state.hostIsForeground = true
+        XCTAssertFalse(state.claimKeyboardLaunch(documentID: "before-switch", keyboardID: owner, at: now))
+        XCTAssertNotNil(state.keyboardLaunch)
+        state.hostIsForeground = false
+        XCTAssertFalse(state.claimKeyboardLaunch(documentID: "before-switch", keyboardID: UUID(), at: now))
+        XCTAssertTrue(state.claimKeyboardLaunch(documentID: "recreated-proxy", keyboardID: owner, at: now))
+        XCTAssertFalse(state.claimKeyboardLaunch(documentID: "recreated-proxy", keyboardID: owner, at: now))
+    }
     func testBunsetsuDeletionIncludesGrammaticalEndings() {
         for (text, removed) in [("今日は東京に行きました。", "行きました。"), ("今日は東京に", "東京に"),
                                 ("これはテストです", "テストです"), ("文字を削除します", "削除します")] {

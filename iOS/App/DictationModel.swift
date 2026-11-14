@@ -25,6 +25,7 @@ import UIKit
     private let syntheticUI: Bool
     private var lastDeliveryTrace = ""
     private var initialized = false
+    private var isForeground = true
     private var pendingKeyboardTicket: UUID?
 
     init() {
@@ -76,6 +77,7 @@ import UIKit
         switch route {
         case .settings: selectedTab = 4
         case .dictate(let ticket):
+            isForeground = true
             pendingKeyboardTicket = ticket
             Task {
                 await initialize()
@@ -87,7 +89,11 @@ import UIKit
     private func activatePendingKeyboardTicket() async {
         guard initialized, let id = pendingKeyboardTicket, let store else { return }
         do {
-            let launch = try store.update { $0.consumeActivationTicket(id, at: Date()) }
+            let launch = try store.update { state in
+                let launch = state.consumeActivationTicket(id, at: Date())
+                if launch != nil { state.hostIsForeground = true }
+                return launch
+            }
             pendingKeyboardTicket = nil
             guard let launch else { return }
             selectedTab = 0; showKeyboardReturn = true
@@ -97,6 +103,11 @@ import UIKit
     }
 
     private func reload() throws { if let store { state = try store.read() } }
+    func sceneChanged(_ phase: ScenePhase) {
+        guard phase != .inactive else { return }
+        isForeground = phase == .active
+        try? update { $0.hostIsForeground = isForeground }
+    }
     private func update(_ body: (inout SessionSnapshot) throws -> Void) throws {
         guard let store else { throw SharedStoreError.unavailable }
         try store.update(body); try reload()
@@ -111,7 +122,7 @@ import UIKit
                 disconnect(message: "マイクの待機時間が終了しました。必要なときに再開できます。")
             }
             if state.sessionID != nil, Date().timeIntervalSince(heartbeatAt) >= 0.4 {
-                heartbeatAt = Date(); try update { $0.refreshHeartbeat(at: heartbeatAt) }
+                heartbeatAt = Date(); try update { $0.refreshHeartbeat(at: heartbeatAt); $0.hostIsForeground = isForeground }
             }
             if let command = try store.nextCommand(at: Date()) {
                 IOSPreparationTrace.step("command." + command.kind.rawValue)

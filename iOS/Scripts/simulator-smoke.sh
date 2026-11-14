@@ -9,6 +9,8 @@ items=json.load(open('.build/smoke/runtimes.json'))['runtimes']
 options=[x for x in items if x.get('isAvailable') and x.get('platform')=='iOS' and int(x['version'].split('.')[0])>=26]
 if not options:
     options=[x for x in items if x.get('isAvailable') and '.iOS-' in x['identifier'] and int(x['version'].split('.')[0])>=26]
+options=[x for x in options if not x.get('supportedDeviceTypes') or any(
+    d['identifier']=='com.apple.CoreSimulator.SimDeviceType.iPhone-16-Pro-Max' for d in x['supportedDeviceTypes'])]
 if not options: raise SystemExit('No iOS 26+ simulator runtime installed')
 print(sorted(options,key=lambda x:tuple(map(int,x['version'].split('.'))))[-1]['identifier'])
 PY
