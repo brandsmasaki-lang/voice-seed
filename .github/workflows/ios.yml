@@ -1,0 +1,49 @@
+name: iPhone app and keyboard
+on:
+  push:
+    paths: ['iOS/**', '.github/workflows/ios.yml', 'Sources/TextPipeline.swift', 'Sources/TranscriptBuffer.swift', 'Sources/DictionaryImporter.swift']
+  pull_request:
+    paths: ['iOS/**', '.github/workflows/ios.yml', 'Sources/TextPipeline.swift', 'Sources/TranscriptBuffer.swift', 'Sources/DictionaryImporter.swift']
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: ios-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  ios:
+    runs-on: macos-26
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - name: Check project and shared Mac processing
+        run: |
+          python3 iOS/Scripts/generate-project.py --check
+          bash iOS/Scripts/test-core.sh
+          swift test --package-path iOS
+      - name: Build iPhone app with embedded keyboard, without signing credentials
+        run: |
+          set -o pipefail
+          xcodebuild -project iOS/VoiceSeed.xcodeproj -scheme VoiceSeed-iOS \
+            -configuration Debug -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' \
+            -derivedDataPath iOS/.build/DerivedData CODE_SIGNING_ALLOWED=NO build \
+            | tee /tmp/voice-seed-ios-build.log
+      - name: Validate embedded extension and PC icon
+        run: python3 iOS/Scripts/check-build.py iOS/.build/DerivedData/Build/Products/Debug-iphonesimulator
+      - name: Launch isolated iPhone simulator and capture setup screen
+        run: bash iOS/Scripts/simulator-smoke.sh
+      - name: Keep simulator verification and resolved dependencies
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: voice-seed-ios-simulator-verification
+          path: |
+            iOS/.build/smoke/
+            iOS/VoiceSeed.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved
+          include-hidden-files: true
+          retention-days: 7
+      - name: Build log on failure
+        if: failure()
+        run: tail -160 /tmp/voice-seed-ios-build.log 2>/dev/null || true

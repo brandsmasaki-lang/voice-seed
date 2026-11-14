@@ -12,3 +12,8 @@ qa/*.wav
 .env.*
 !.env.example
 __pycache__/
+.swiftpm/
+xcuserdata/
+*.xcuserstate
+.ios-signing.local.xcconfig
+iOS/VoiceSeed.xcodeproj/project.xcworkspace/
