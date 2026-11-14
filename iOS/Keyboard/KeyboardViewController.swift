@@ -165,6 +165,7 @@ final class KeyboardViewController: UIInputViewController {
             speechButton.backgroundColor = snapshot.phase == .listening ? .systemGreen : .label
             speechButton.setTitleColor(.systemBackground, for: .normal)
             speechButton.isEnabled = [.ready, .listening, .processing].contains(snapshot.phase)
+                && !(snapshot.phase == .ready && pending != nil)
             notice.text = !snapshot.preview.isEmpty ? snapshot.preview : live ? "端末内で認識・テンキーでそのまま修正できます" : "最初に本体でマイクを準備し、この入力欄に戻ってください"
             if let pending, let store {
                 guard pending.sessionID == snapshot.sessionID else { self.pending = nil; return }
@@ -190,6 +191,10 @@ final class KeyboardViewController: UIInputViewController {
                             state.history[index].metrics.insertionMilliseconds = latency
                         }
                     }
+                } else if snapshot.finishedRequestID == pending.id {
+                    // Silence/cancellation has no text to deliver. Release the
+                    // request so the next utterance can start normally.
+                    self.pending = nil
                 }
             }
         } catch SharedStoreError.busy { }
@@ -204,11 +209,14 @@ final class KeyboardViewController: UIInputViewController {
                 request.stoppedAt = Date(); pending = request
                 try store.enqueue(.init(kind: .stop, request: request)); return
             }
-            guard snapshot.phase == .ready, snapshot.isLive(at: Date()), let sessionID = snapshot.sessionID else { return }
+            // The host polls asynchronously. Keep the first request until it is
+            // accepted/delivered rather than replacing it on a rapid second tap.
+            guard pending == nil, snapshot.phase == .ready, snapshot.isLive(at: Date()), let sessionID = snapshot.sessionID else { return }
             commit()
             let request = CaptureRequest(id: UUID(), sessionID: sessionID, focusID: focusID,
                 documentID: textDocumentProxy.documentIdentifier.uuidString, startedAt: Date())
-            pending = request; try store.enqueue(.init(kind: .start, request: request))
+            try store.enqueue(.init(kind: .start, request: request)); pending = request
+            speechButton.isEnabled = false
         } catch { notice.text = error.localizedDescription }
     }
     private func cancelPending() {

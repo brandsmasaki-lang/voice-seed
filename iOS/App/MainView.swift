@@ -78,7 +78,7 @@ private struct DictationHome: View {
                     Text("ほかのアプリで使う").font(.headline)
                     Text("① 本体でマイクを有効にします。\n② LINEやメールの入力欄に戻ります。\n③ 🌐で「こえのたね」に切り替え、マイクをタップ。\n④ 話し終えてもう一度タップすると、文章が入ります。")
                         .font(.subheadline).lineSpacing(6)
-                    Text("待機中もiPhoneのマイク使用表示が出ます。「マイクを終了」か待機時間の終了で止まります。待機中の音声は認識・保存しません。")
+                    Text("待機中もiPhoneのマイク使用表示が出ます。「マイクを終了」か、最後の入力から待機時間が経つと止まります。話している途中では終了しません。待機中の音声は認識・保存しません。")
                         .font(.caption).foregroundStyle(.secondary)
                     Button("最初の設定・入力練習を開く") { model.showSetup = true }
                 }

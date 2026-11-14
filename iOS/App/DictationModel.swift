@@ -68,11 +68,12 @@ import UIKit
     private func poll() async {
         guard let store else { return }
         do {
-            if state.sessionID != nil, let end = state.expiresAt, Date() >= end {
+            if state.sessionID != nil, state.phase != .listening, state.phase != .processing,
+               let end = state.expiresAt, Date() >= end {
                 disconnect(message: "マイクの待機時間が終了しました。必要なときに再開できます。")
             }
             if state.sessionID != nil, Date().timeIntervalSince(heartbeatAt) >= 0.4 {
-                heartbeatAt = Date(); try update { $0.heartbeat = heartbeatAt }
+                heartbeatAt = Date(); try update { $0.refreshHeartbeat(at: heartbeatAt) }
             }
             if let command = try store.nextCommand(at: Date()) {
                 IOSPreparationTrace.step("command." + command.kind.rawValue)
@@ -145,10 +146,13 @@ import UIKit
             var accepted = false
             try update { accepted = $0.begin(request, at: Date()) }
             IOSPreparationTrace.step(accepted ? "capture.accepted" : "capture.rejected")
-            guard accepted else { return }
+            guard accepted else {
+                if state.request?.id != request.id { try update { $0.finishWithoutDelivery(request.id) } }
+                return
+            }
             if synthetic { try update { $0.preview = "明日の打ち合わせは午後3時からです。" }; return }
             guard let capture = prepared else {
-                try update { $0.request = nil; $0.phase = .preparing }
+                try update { $0.finishWithoutDelivery(request.id); $0.phase = .preparing }
                 Task { await rewarm() }; return
             }
             prepared = nil; active = capture
@@ -205,7 +209,7 @@ import UIKit
                     firstPreviewMilliseconds: capture?.previewMilliseconds, refinementApplied: refined)
                 guard self.generation == token, self.state.request?.id == request.id else { return }
                 try self.update { value in
-                    if text.isEmpty { value.request = nil; value.preview = "" }
+                    if text.isEmpty { value.finishWithoutDelivery(request.id) }
                     else {
                         let delivery = TextDelivery(request: request, text: text, metrics: metrics, createdAt: finished)
                         guard value.publish(delivery) else { return }
@@ -223,7 +227,7 @@ import UIKit
             } catch {
                 guard self.generation == token, self.state.request?.id == request.id else { return }
                 if !(error is CancellationError), !(error is DictationFailure) { self.errorMessage = error.localizedDescription }
-                try? self.update { $0.request = nil; $0.preview = "" }
+                try? self.update { $0.finishWithoutDelivery(request.id) }
                 await self.rewarm(token: token)
             }
         }
@@ -233,7 +237,10 @@ import UIKit
         finishing?.cancel(); finishing = nil; microphone.attach(nil); active?.cancel(); active = nil
         processingCapture?.cancel(); processingCapture = nil
         let token = UUID(); generation = token
-        try? update { $0.request = nil; $0.preview = ""; $0.phase = .preparing; $0.level = 0 }
+        try? update {
+            if let id = $0.request?.id { $0.finishWithoutDelivery(id) }
+            $0.phase = .preparing; $0.level = 0
+        }
         await rewarm(token: token)
     }
 

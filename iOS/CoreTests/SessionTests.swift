@@ -93,3 +93,91 @@ final class SessionTests: XCTestCase {
         XCTAssertEqual(TextAccuracy.characterErrorRate(reference: "", candidate: "声"), 1)
     }
 }
+
+extension SessionTests {
+    func testLongProgressiveTextRetainsAllFinalSegments() {
+        var buffer = TranscriptBuffer()
+        var expected = ""
+        for i in 0..<120 {
+            let text = "第\(i)項。午後3時までに資料を送らないでください。\n"
+            let start = Double(i * 2)
+            buffer.update(start: start, end: start + 2, text: "第", isFinal: false)
+            buffer.update(start: start, end: start + 2, text: text, isFinal: true)
+            buffer.update(start: start, end: start + 2, text: "古い途中結果", isFinal: false)
+            expected += text
+        }
+        XCTAssertEqual(buffer.finalText, expected.trimmingCharacters(in: .whitespacesAndNewlines))
+    }
+
+    func testTwentyConsecutiveDeliveriesAreInsertedOnceInOrder() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let host = try SharedSessionStore(directory: directory)
+        let keyboard = try SharedSessionStore(directory: directory)
+        try host.update { $0 = prepared() }
+        var inserted: [String] = []
+        for i in 0..<20 {
+            try host.update { $0.phase = .ready }
+            let next = request(try keyboard.read())
+            try host.update { XCTAssertTrue($0.begin(next, at: now)) }
+            try host.update { XCTAssertTrue($0.publish(delivery(next, text: "入力\(i)"))) }
+            let received = try keyboard.update {
+                $0.claimDelivery(requestID: next.id, focusID: next.focusID, documentID: next.documentID, now: now)
+            }
+            inserted.append(try XCTUnwrap(received).text)
+            try keyboard.update {
+                XCTAssertNil($0.claimDelivery(requestID: next.id, focusID: next.focusID, documentID: next.documentID, now: now))
+                $0.delivery?.status = .inserted
+            }
+        }
+        XCTAssertEqual(inserted, (0..<20).map { "入力\($0)" })
+        XCTAssertEqual(try host.read().history.count, 5)
+    }
+}
+
+extension SessionTests {
+    func testSilentCompletionReleasesRequestWithoutPublishingText() {
+        var state = prepared(); let first = request(state)
+        XCTAssertTrue(state.begin(first, at: now))
+        state.finishWithoutDelivery(first.id); state.phase = .ready
+        XCTAssertNil(state.request); XCTAssertNil(state.delivery)
+        XCTAssertEqual(state.finishedRequestID, first.id)
+        XCTAssertTrue(state.begin(request(state), at: now))
+    }
+
+    func testRejectedRequestDoesNotEraseActiveUtterance() {
+        var state = prepared(); let active = request(state); let rejected = request(state)
+        XCTAssertTrue(state.begin(active, at: now))
+        XCTAssertFalse(state.begin(rejected, at: now))
+        state.finishWithoutDelivery(rejected.id)
+        XCTAssertEqual(state.request?.id, active.id)
+        XCTAssertEqual(state.phase, .listening)
+        XCTAssertTrue(state.publish(delivery(active)))
+        XCTAssertEqual(state.finishedRequestID, active.id)
+    }
+
+    func testLongCaptureRenewsStandbyButIdleSessionStillExpires() {
+        var state = prepared(); state.settings.sessionMinutes = 1
+        XCTAssertTrue(state.begin(request(state), at: now))
+        for second in 1...180 {
+            let tick = now.addingTimeInterval(Double(second))
+            state.refreshHeartbeat(at: tick)
+            XCTAssertTrue(state.isLive(at: tick))
+        }
+        state.phase = .ready
+        let expiry = state.expiresAt
+        state.refreshHeartbeat(at: now.addingTimeInterval(230))
+        XCTAssertEqual(state.expiresAt, expiry)
+        state.refreshHeartbeat(at: now.addingTimeInterval(241))
+        XCTAssertFalse(state.isLive(at: now.addingTimeInterval(241)))
+    }
+
+    func testPreviousSnapshotWithoutCompletionFieldStillDecodes() throws {
+        let encoder = JSONEncoder()
+        var fields = try XCTUnwrap(JSONSerialization.jsonObject(with: encoder.encode(prepared())) as? [String: Any])
+        fields.removeValue(forKey: "finishedRequestID")
+        let decoded = try JSONDecoder().decode(SessionSnapshot.self, from: JSONSerialization.data(withJSONObject: fields))
+        XCTAssertNil(decoded.finishedRequestID)
+        XCTAssertEqual(decoded.phase, .ready)
+    }
+}

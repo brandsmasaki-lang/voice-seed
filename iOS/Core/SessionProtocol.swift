@@ -74,6 +74,8 @@ struct SessionSnapshot: Codable, Equatable, Sendable {
     var expiresAt: Date?
     var request: CaptureRequest?
     var preview = ""
+    // Optional for compatibility with snapshots written by earlier builds.
+    var finishedRequestID: UUID?
     var level: Double = 0
     var message = ""
     var commands: [SessionCommand] = []
@@ -90,11 +92,20 @@ struct SessionSnapshot: Codable, Equatable, Sendable {
         return age >= -1 && age <= 2
     }
 
+    mutating func renewStandby(at now: Date) {
+        expiresAt = now.addingTimeInterval(Double(min(10, max(1, settings.sessionMinutes))) * 60)
+    }
+
+    mutating func refreshHeartbeat(at now: Date) {
+        heartbeat = now
+        if phase == .listening || phase == .processing { renewStandby(at: now) }
+    }
+
     mutating func activate(at now: Date) {
         sessionID = UUID()
         phase = .preparing
         heartbeat = now
-        expiresAt = now.addingTimeInterval(Double(min(10, max(1, settings.sessionMinutes))) * 60)
+        renewStandby(at: now)
         request = nil; delivery = nil; preview = ""; level = 0; message = ""
     }
 
@@ -110,13 +121,20 @@ struct SessionSnapshot: Codable, Equatable, Sendable {
               now.timeIntervalSince(next.startedAt) >= -1,
               now.timeIntervalSince(next.startedAt) <= 5 else { return false }
         request = next; delivery = nil; phase = .listening; preview = ""; level = 0; message = ""
+        renewStandby(at: now)
         return true
+    }
+
+    mutating func finishWithoutDelivery(_ id: UUID) {
+        // A rejected/stale command must never clear a different active request.
+        if request?.id == id { request = nil; preview = ""; level = 0 }
+        finishedRequestID = id
     }
 
     mutating func publish(_ next: TextDelivery) -> Bool {
         guard request?.id == next.id, request?.focusID == next.request.focusID,
               next.request.sessionID == sessionID, !next.text.isEmpty else { return false }
-        delivery = next; preview = ""; request = nil; level = 0
+        delivery = next; preview = ""; request = nil; level = 0; finishedRequestID = next.id
         if settings.saveHistory {
             history.removeAll { $0.id == next.id }
             history.insert(.init(id: next.id, text: next.text, date: next.createdAt, metrics: next.metrics), at: 0)
