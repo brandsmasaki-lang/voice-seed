@@ -36,7 +36,12 @@ final class KeyboardViewController: UIInputViewController {
     private var timer: Timer?
     private var pending: CaptureRequest?
     private var activationTicket: KeyboardLaunch?
-    private let keyboardID = UUID()
+    // UIKit recreates this controller and its document proxy when returning
+    // from the containing app, even while the extension process stays alive.
+    // Keep launch ownership for that process; still reject a different process
+    // and bind each capture/delivery to the newly visible field and focus.
+    private static let processKeyboardID = UUID()
+    private let keyboardID = KeyboardViewController.processKeyboardID
     private var isVisible = false
     private var focusSettlesAt: TimeInterval = 0
     private var focusID = UUID()
@@ -164,6 +169,12 @@ final class KeyboardViewController: UIInputViewController {
         if store == nil { store = try? AppGroupContainer.open() }
         do {
             if let store { snapshot = try store.read() }
+            #if DEBUG
+            if let launch = snapshot.keyboardLaunch, let store {
+                let trace = "visible=\(isVisible).settled=\(ProcessInfo.processInfo.systemUptime >= focusSettlesAt).foreground=\(snapshot.hostIsForeground == true).owner=\(launch.keyboardID == keyboardID).document=\(launch.documentID == textDocumentProxy.documentIdentifier.uuidString).phase=\(snapshot.phase.rawValue).pending=\(pending != nil)"
+                if trace != snapshot.keyboardHandoffTrace { try store.update { $0.keyboardHandoffTrace = trace } }
+            }
+            #endif
             if let store, activationTicket == nil || Date().timeIntervalSince(activationTicket!.createdAt) > 30 {
                 let ticket = KeyboardLaunch(documentID: textDocumentProxy.documentIdentifier.uuidString, createdAt: Date(), keyboardID: keyboardID)
                 try store.update { $0.keyboardActivationTicket = ticket }

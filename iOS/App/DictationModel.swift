@@ -27,6 +27,7 @@ import UIKit
     private var initialized = false
     private var isForeground = true
     private var pendingKeyboardTicket: UUID?
+    private var lastHandoffTrace = ""
 
     init() {
         #if DEBUG
@@ -104,13 +105,16 @@ import UIKit
 
     private func reload() throws { if let store { state = try store.read() } }
     func sceneChanged(_ phase: ScenePhase) {
+        IOSPreparationTrace.step("scene." + String(describing: phase))
         guard phase != .inactive else { return }
         isForeground = phase == .active
         try? update { $0.hostIsForeground = isForeground }
     }
     private func update(_ body: (inout SessionSnapshot) throws -> Void) throws {
         guard let store else { throw SharedStoreError.unavailable }
-        try store.update(body); try reload()
+        // Return the committed snapshot under the same lock. A second read
+        // could fail with busy after a successful write and lose the command.
+        state = try store.update { value in try body(&value); return value }
     }
 
     private func poll() async {
@@ -145,6 +149,10 @@ import UIKit
                 }
             }
             try reload()
+            if let trace = state.keyboardHandoffTrace, trace != lastHandoffTrace {
+                lastHandoffTrace = trace
+                IOSPreparationTrace.step("handoff." + trace)
+            }
             if let delivery = state.delivery {
                 let key = delivery.id.uuidString + delivery.status.rawValue
                 if key != lastDeliveryTrace {
@@ -196,7 +204,7 @@ import UIKit
         start(request)
     }
 
-    private func start(_ request: CaptureRequest) {
+    private func start(_ request: CaptureRequest, retry: Int = 0) {
         do {
             var accepted = false
             try update { accepted = $0.begin(request, at: Date()) }
@@ -205,7 +213,7 @@ import UIKit
                 if state.request?.id != request.id { try update { $0.finishWithoutDelivery(request.id) } }
                 return
             }
-            if synthetic { try update { $0.preview = "明日の打ち合わせは午後3時からです。" }; return }
+            if synthetic { try? update { $0.preview = "明日の打ち合わせは午後3時からです。" }; return }
             guard let capture = prepared else {
                 try update { $0.finishWithoutDelivery(request.id); $0.phase = .preparing }
                 Task { await rewarm() }; return
@@ -227,19 +235,37 @@ import UIKit
                 self.disconnect(message: "マイクの接続を確認し、もう一度有効にしてください。")
             }
             capture.start(); microphone.attach(capture)
+        } catch SharedStoreError.busy {
+            guard retry < 25 else { errorMessage = SharedStoreError.busy.localizedDescription; return }
+            let token = generation
+            Task { [weak self] in
+                try? await Task.sleep(for: .milliseconds(20))
+                guard let self, self.generation == token else { return }
+                self.start(request, retry: retry + 1)
+            }
         } catch { errorMessage = error.localizedDescription }
     }
 
-    func finish() {
+    func finish(retry: Int = 0) {
         guard var request = state.request, state.phase == .listening else { return }
-        showKeyboardReturn = false
         request.stoppedAt = Date()
+        let token = generation
+        do { try update { $0.request = request; $0.phase = .processing; $0.level = 0 } }
+        catch SharedStoreError.busy {
+            guard retry < 25 else { errorMessage = SharedStoreError.busy.localizedDescription; return }
+            let requestID = request.id
+            Task { [weak self] in
+                try? await Task.sleep(for: .milliseconds(20))
+                guard let self, self.generation == token, self.state.request?.id == requestID else { return }
+                self.finish(retry: retry + 1)
+            }
+            return
+        }
+        catch { errorMessage = error.localizedDescription; return }
+        showKeyboardReturn = false
         microphone.attach(nil)
         let capture = active; active = nil
         processingCapture = capture
-        let token = generation
-        do { try update { $0.request = request; $0.phase = .processing; $0.level = 0 } }
-        catch { errorMessage = error.localizedDescription; return }
         finishing = Task { [weak self, capture] in
             guard let self else { return }
             defer { if self.generation == token { self.finishing = nil; self.processingCapture = nil } }

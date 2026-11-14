@@ -74,7 +74,7 @@ for target in ["App", "Keyboard"]:
               "PRODUCT_MODULE_NAME": "VoiceSeedApp" if target == "App" else "VoiceSeedKeyboard",
               "PRODUCT_NAME": "こえのたね" if target == "App" else "VoiceSeedKeyboard",
               "INFOPLIST_FILE": "Config/" + target + "-Info.plist", "CODE_SIGN_ENTITLEMENTS": "Config/" + target + ".entitlements",
-              "CURRENT_PROJECT_VERSION": "1", "MARKETING_VERSION": "0.1.0",
+              "CURRENT_PROJECT_VERSION": "2", "MARKETING_VERSION": "0.1.0",
               "LD_RUNPATH_SEARCH_PATHS": ["$(inherited)", "@executable_path/Frameworks", "@executable_path/../../Frameworks"]}
     if target == "App": values["ASSETCATALOG_COMPILER_APPICON_NAME"] = "AppIcon"
     else: values.update({"APPLICATION_EXTENSION_API_ONLY": "YES", "SKIP_INSTALL": "YES"})

@@ -88,6 +88,8 @@ struct SessionSnapshot: Codable, Equatable, Sendable {
     var level: Double = 0
     var keyboardActivationTicket: KeyboardLaunch?
     var hostIsForeground: Bool?
+    // State labels only; never input text, identifiers, or audio.
+    var keyboardHandoffTrace: String?
     var message = ""
     var commands: [SessionCommand] = []
     var handledCommandIDs: [UUID] = []
@@ -117,7 +119,7 @@ struct SessionSnapshot: Codable, Equatable, Sendable {
         guard age >= -1 && age <= 60 else { keyboardLaunch = nil; return false }
         guard phase == .ready, isLive(at: now), hostIsForeground != true else { return false }
         // A document proxy may be recreated when the host application resumes.
-        // Only the keyboard instance that issued the launch can rebind it.
+        // Only the keyboard process that issued the launch can rebind it.
         if let owner = launch.keyboardID {
             guard owner == keyboardID else { return false }
         } else {
