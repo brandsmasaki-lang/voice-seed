@@ -86,7 +86,7 @@
   "iOS/Keyboard/KanaFlickKey.swift": "694dd43ca4c74472c973561c272c392a5fe1b9a943c0cc1e809d19a4b1001dc4",
   "iOS/Keyboard/KeyboardViewController.swift": "2ffcfa36cbfd03a8769e1abbfd1b2ab1ade82f59a0728bdbce729fca7158b9e6",
   "iOS/Package.swift": "4a12beca26f3dde30451703cf40a4b2bb955bd0fa075672aee04303401d44740",
-  "iOS/README.md": "b0989420147c96c64454dd409a4195b7a28243f651fee80d9061e5d669d98416",
+  "iOS/README.md": "7291c66b3cd41bffb39d63e9abd80437f3307a1201bcb69e28d02144fe2b4b0b",
   "iOS/Scripts/check-build.py": "feb9f267a765d4edc4316a96ab6975d31ce49294974e0ea844d29a56086003eb",
   "iOS/Scripts/generate-project.py": "7559401355af49d5f5b17051bad1b47f7dbcbc7450522d1185367d41bd5be45b",
   "iOS/Scripts/simulator-smoke.sh": "116b9c5577aed37244b473c8b7352788b2e0e718b3877d192b17f9f2bda27ad9",
