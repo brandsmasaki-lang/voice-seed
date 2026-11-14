@@ -24,6 +24,8 @@ import UIKit
     private let synthetic: Bool
     private let syntheticUI: Bool
     private var lastDeliveryTrace = ""
+    private var initialized = false
+    private var pendingKeyboardTicket: UUID?
 
     init() {
         #if DEBUG
@@ -50,6 +52,8 @@ import UIKit
             }
             if synthetic { modelReady = true }
             else { modelReady = await JapaneseSpeechModel.ready() }
+            initialized = true
+            await activatePendingKeyboardTicket()
             poller = Task { [weak self] in
                 while !Task.isCancelled {
                     guard let self else { return }
@@ -57,6 +61,31 @@ import UIKit
                     try? await Task.sleep(for: .milliseconds(80))
                 }
             }
+        } catch { errorMessage = error.localizedDescription }
+    }
+
+    func handleIncomingURL(_ url: URL) {
+        guard let route = VoiceSeedLink(url: url) else { return }
+        switch route {
+        case .settings: selectedTab = 4
+        case .dictate(let ticket):
+            pendingKeyboardTicket = ticket
+            Task {
+                await initialize()
+                await activatePendingKeyboardTicket()
+            }
+        }
+    }
+
+    private func activatePendingKeyboardTicket() async {
+        guard initialized, let id = pendingKeyboardTicket, let store else { return }
+        do {
+            let launch = try store.update { $0.consumeActivationTicket(id, at: Date()) }
+            pendingKeyboardTicket = nil
+            guard let launch else { return }
+            selectedTab = 0; showKeyboardReturn = true
+            await activate()
+            if state.phase == .ready { try update { $0.keyboardLaunch = launch } }
         } catch { errorMessage = error.localizedDescription }
     }
 
@@ -68,6 +97,7 @@ import UIKit
 
     private func poll() async {
         guard let store else { return }
+        if pendingKeyboardTicket != nil { await activatePendingKeyboardTicket() }
         do {
             if state.sessionID != nil, state.phase != .listening, state.phase != .processing,
                let end = state.expiresAt, Date() >= end {

@@ -13,6 +13,7 @@ import KanaKanjiConverterModuleWithDefaultDictionary
         if !reading.isEmpty { reading.removeLast() }
         reading += text; refresh()
     }
+    func removeLast(_ count: Int) { reading = String(reading.dropLast(min(count, reading.count))); refresh() }
     func delete() { if !reading.isEmpty { reading.removeLast() }; refresh() }
     func alternateLast() {
         guard let last = reading.last else { return }

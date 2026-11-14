@@ -85,6 +85,7 @@ struct SessionSnapshot: Codable, Equatable, Sendable {
     var finishedRequestID: UUID?
     var keyboardLaunch: KeyboardLaunch?
     var level: Double = 0
+    var keyboardActivationTicket: KeyboardLaunch?
     var message = ""
     var commands: [SessionCommand] = []
     var handledCommandIDs: [UUID] = []
@@ -115,6 +116,13 @@ struct SessionSnapshot: Codable, Equatable, Sendable {
         guard phase == .ready, isLive(at: now), launch.documentID == documentID else { return false }
         keyboardLaunch = nil
         return true
+    }
+
+    mutating func consumeActivationTicket(_ id: UUID, at now: Date) -> KeyboardLaunch? {
+        guard let ticket = keyboardActivationTicket, ticket.id == id else { return nil }
+        keyboardActivationTicket = nil
+        let age = now.timeIntervalSince(ticket.createdAt)
+        return age >= -1 && age <= 60 ? ticket : nil
     }
 
     mutating func renewStandby(at now: Date) {

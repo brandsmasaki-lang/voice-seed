@@ -1,19 +1,18 @@
 import UIKit
 import SwiftUI
-import AppIntents
 
 private struct ActivateKeyboardButton: View {
-    var documentID = ""
+    var destination: URL?
     var body: some View {
-        Button(intent: ActivateDictationIntent(documentID: documentID)) {
+        Link(destination: destination ?? URL(string: "koenotane://settings")!) {
             Label("タップして話す", systemImage: "mic").font(.system(size: 14, weight: .semibold))
                 .padding(.horizontal, 14).padding(.vertical, 8)
-        }.buttonStyle(.plain).foregroundStyle(.white).background(.black.opacity(0.8), in: Capsule())
+        }.disabled(destination == nil).buttonStyle(.plain).foregroundStyle(.white).background(.black.opacity(0.8), in: Capsule())
     }
 }
 private struct KeyboardSettingsButton: View {
     var body: some View {
-        Button(intent: OpenVoiceSeedSettingsIntent()) { Image(systemName: "slider.horizontal.3").font(.system(size: 18)).padding(8) }
+        Link(destination: URL(string: "koenotane://settings")!) { Image(systemName: "slider.horizontal.3").font(.system(size: 18)).padding(8) }
             .buttonStyle(.plain).foregroundStyle(.primary)
     }
 }
@@ -36,6 +35,7 @@ final class KeyboardViewController: UIInputViewController {
     private var snapshot = SessionSnapshot()
     private var timer: Timer?
     private var pending: CaptureRequest?
+    private var activationTicket: KeyboardLaunch?
     private var focusID = UUID()
     private var currentDocument = ""
     private var inserting = false
@@ -115,7 +115,7 @@ final class KeyboardViewController: UIInputViewController {
     override func viewWillAppear(_ animated: Bool) {
         super.viewWillAppear(animated)
         focusID = UUID(); currentDocument = textDocumentProxy.documentIdentifier.uuidString; pending = nil; tapCycle.reset()
-        activationHost?.rootView = ActivateKeyboardButton(documentID: currentDocument)
+        activationTicket = nil
         do { store = try AppGroupContainer.open() } catch { notice.text = error.localizedDescription }
         refresh()
         timer?.invalidate()
@@ -134,7 +134,7 @@ final class KeyboardViewController: UIInputViewController {
         let document = textDocumentProxy.documentIdentifier.uuidString
         if document != currentDocument {
             cancelPending(); tapCycle.reset(); composer.clear(); updateCandidates(); focusID = UUID(); currentDocument = document
-            activationHost?.rootView = ActivateKeyboardButton(documentID: document)
+            activationTicket = nil
         }
     }
     override func selectionDidChange(_ textInput: (any UITextInput)?) {
@@ -153,6 +153,12 @@ final class KeyboardViewController: UIInputViewController {
         if store == nil { store = try? AppGroupContainer.open() }
         do {
             if let store { snapshot = try store.read() }
+            if let store, activationTicket == nil || Date().timeIntervalSince(activationTicket!.createdAt) > 30 {
+                let ticket = KeyboardLaunch(documentID: textDocumentProxy.documentIdentifier.uuidString, createdAt: Date())
+                try store.update { $0.keyboardActivationTicket = ticket }
+                activationTicket = ticket
+                activationHost?.rootView = ActivateKeyboardButton(destination: VoiceSeedLink.dictationURL(ticket: ticket.id))
+            }
             if pending == nil, snapshot.keyboardLaunch != nil, snapshot.phase == .ready, let store {
                 let document = textDocumentProxy.documentIdentifier.uuidString
                 // Claim and queue in one transaction, bound to the original field.
@@ -279,7 +285,7 @@ final class KeyboardViewController: UIInputViewController {
             }
             let space = spaceButton("空白")
             let right = UIStackView(arrangedSubviews: [
-                key("⌫") { [weak self] in self?.delete() }, space,
+                deleteKey(), space,
                 key("改行") { [weak self] in self?.enter() }
             ]); right.axis = .vertical; right.spacing = 5
             right.arrangedSubviews[0].heightAnchor.constraint(equalToConstant: 45).isActive = true
@@ -300,7 +306,7 @@ final class KeyboardViewController: UIInputViewController {
                 key("⇧") { [weak self] in self?.uppercase.toggle(); self?.buildKeys() },
                 key("123") { [weak self] in self?.switchMode(.numbers) },
                 spaceButton("space"),
-                key("⌫") { [weak self] in self?.delete() },
+                deleteKey(),
                 key("改行") { [weak self] in self?.enter() }
             ]))
             bodyStack.distribution = .fillEqually
@@ -314,7 +320,7 @@ final class KeyboardViewController: UIInputViewController {
             bodyStack.addArrangedSubview(row([
                 key("あ") { [weak self] in self?.switchMode(.kana) },
                 key("ABC") { [weak self] in self?.switchMode(.abc) }, spaceButton("空白"),
-                key("⌫") { [weak self] in self?.delete() }, key("改行") { [weak self] in self?.enter() }
+                deleteKey(), key("改行") { [weak self] in self?.enter() }
             ])); bodyStack.distribution = .fillEqually
         }
     }
@@ -351,6 +357,26 @@ final class KeyboardViewController: UIInputViewController {
         cancelPending(); tapCycle.reset()
         if !composer.isEmpty { composer.delete(); setMarked(); updateCandidates(); if composer.isEmpty { textDocumentProxy.unmarkText() } }
         else { inserting = true; textDocumentProxy.deleteBackward(); inserting = false }
+    }
+    private func deleteKey() -> DeleteKey {
+        let key = DeleteKey(frame: .zero)
+        key.onDelete = { [weak self] in self?.delete() }
+        key.onDeleteBunsetsu = { [weak self] in self?.deleteBunsetsu() }
+        return key
+    }
+    private func deleteBunsetsu() {
+        cancelPending(); tapCycle.reset()
+        if !composer.isEmpty {
+            composer.removeLast(BunsetsuDeletion.characterCount(beforeCursor: composer.reading))
+            setMarked(); updateCandidates()
+            if composer.isEmpty { textDocumentProxy.unmarkText() }
+        } else {
+            let count = textDocumentProxy.selectedText?.isEmpty == false ? 1
+                : BunsetsuDeletion.characterCount(beforeCursor: textDocumentProxy.documentContextBeforeInput ?? "")
+            inserting = true
+            for _ in 0..<count { textDocumentProxy.deleteBackward() }
+            inserting = false
+        }
     }
     private func enter() { cancelPending(); if !composer.isEmpty { commit(composer.candidates.first) } else { typeDirect("\n") } }
     private func moveCursor(_ delta: Int) { cancelPending(); commit(); textDocumentProxy.adjustTextPosition(byCharacterOffset: delta) }

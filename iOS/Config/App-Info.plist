@@ -41,5 +41,16 @@
 	</array>
 	<key>VoiceSeedAppGroup</key>
 	<string>$(VOICE_SEED_APP_GROUP)</string>
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleURLName</key>
+			<string>jp.ainotane.voice-seed.ios</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>koenotane</string>
+			</array>
+		</dict>
+	</array>
 </dict>
 </plist>
