@@ -2,6 +2,14 @@ import AVFoundation
 import Speech
 import CoreMedia
 
+struct IOSAudioInputDiagnostics: Sendable {
+    var buffers = 0
+    var frames: UInt64 = 0
+    var peakLevel: Double = 0
+    var sourceMaximum: Float = 0
+    var copiedMaximum: Float = 0
+}
+
 /// All conversion runs on one queue. The render callback's buffer is copied before return.
 final class IOSAudioStreamPump: @unchecked Sendable {
     private let queue = DispatchQueue(label: "jp.ainotane.voice-seed.audio", qos: .userInitiated)
@@ -10,6 +18,7 @@ final class IOSAudioStreamPump: @unchecked Sendable {
     private var converter: AVAudioConverter?
     private var closed = false
     private var conversionError: Error?
+    private var diagnostics = IOSAudioInputDiagnostics()
     var onLevel: (@Sendable (Double) -> Void)?
 
     init(target: AVAudioFormat, continuation: AsyncThrowingStream<AnalyzerInput, Error>.Continuation) {
@@ -17,6 +26,11 @@ final class IOSAudioStreamPump: @unchecked Sendable {
     }
 
     func enqueue(_ source: AVAudioPCMBuffer) {
+        // Compare amplitudes before and after the render callback's buffer copy.
+        // Only aggregate numbers are retained; audio is never written to disk.
+        #if DEBUG
+        let sourceMaximum = Self.maximumAmplitude(source)
+        #endif
         guard let copy = AVAudioPCMBuffer(pcmFormat: source.format, frameCapacity: source.frameLength) else { return }
         copy.frameLength = source.frameLength
         let inputs = UnsafeMutableAudioBufferListPointer(UnsafeMutablePointer(mutating: source.audioBufferList))
@@ -26,11 +40,21 @@ final class IOSAudioStreamPump: @unchecked Sendable {
         }
         queue.async { [self] in
             guard !closed else { return }
+            diagnostics.buffers += 1
+            diagnostics.frames += UInt64(copy.frameLength)
+            #if DEBUG
+            diagnostics.sourceMaximum = max(diagnostics.sourceMaximum, sourceMaximum)
+            diagnostics.copiedMaximum = max(diagnostics.copiedMaximum, Self.maximumAmplitude(copy))
+            if diagnostics.buffers == 1 {
+                IOSPreparationTrace.step("audio.format=" + String(copy.format.commonFormat.rawValue) + ".channels=" + String(copy.format.channelCount) + ".rate=" + String(copy.format.sampleRate))
+            }
+            #endif
             do {
                 if let samples = copy.floatChannelData?[0], copy.frameLength > 0 {
                     var sum: Float = 0
                     for i in 0..<Int(copy.frameLength) { sum += samples[i] * samples[i] }
                     let db = 20 * log10(max(0.000001, sqrt(Double(sum) / Double(copy.frameLength))))
+                    diagnostics.peakLevel = max(diagnostics.peakLevel, max(0, min(1, (db + 60) / 60)))
                     onLevel?(max(0, min(1, (db + 60) / 60)))
                 }
                 if copy.format == target { try yield(copy); return }
@@ -53,6 +77,32 @@ final class IOSAudioStreamPump: @unchecked Sendable {
             } catch {
                 conversionError = error; closed = true; continuation.finish(throwing: error)
             }
+        }
+    }
+
+    #if DEBUG
+    private static func maximumAmplitude(_ buffer: AVAudioPCMBuffer) -> Float {
+        var maximum: Float = 0
+        if let channels = buffer.floatChannelData {
+            for channel in 0..<Int(buffer.format.isInterleaved ? 1 : buffer.format.channelCount) {
+                for frame in 0..<Int(buffer.frameLength) * (buffer.format.isInterleaved ? Int(buffer.format.channelCount) : 1) {
+                    maximum = max(maximum, abs(channels[channel][frame]))
+                }
+            }
+        } else if let channels = buffer.int16ChannelData {
+            for channel in 0..<Int(buffer.format.isInterleaved ? 1 : buffer.format.channelCount) {
+                for frame in 0..<Int(buffer.frameLength) * (buffer.format.isInterleaved ? Int(buffer.format.channelCount) : 1) {
+                    maximum = max(maximum, abs(Float(channels[channel][frame])) / 32768)
+                }
+            }
+        }
+        return maximum
+    }
+    #endif
+
+    func inputDiagnostics() async -> IOSAudioInputDiagnostics {
+        await withCheckedContinuation { continuation in
+            queue.async { [self] in continuation.resume(returning: diagnostics) }
         }
     }
 

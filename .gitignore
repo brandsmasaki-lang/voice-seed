@@ -15,3 +15,5 @@ __pycache__/
 .swiftpm/
 xcuserdata/
 *.xcuserstate
+.ios-signing.local.xcconfig
+iOS/VoiceSeed.xcodeproj/project.xcworkspace/

@@ -39,6 +39,8 @@ Xcode 26以降とiOS SDKが必要です。Command Line ToolsだけではiPhone�
 
 証明書・プロビジョニングファイル・個人アカウント情報はリポジトリに含めません。署名なしのSimulatorビルドを、iPhoneにそのまま入る配布物とは扱いません。
 
+開発チームをこのMacだけで保持する場合は、リポジトリ直下の`.ios-signing.local.xcconfig`へ`DEVELOPMENT_TEAM = 自分のチームID`を設定できます。本体とキーボードの両方へ適用し、このファイルとXcodeのワークスペース情報はGitと公開ソースアーカイブから除外します。
+
 ~~~sh
 python3 iOS/Scripts/generate-project.py --check
 bash iOS/Scripts/test-core.sh
@@ -51,6 +53,14 @@ xcodebuild -project iOS/VoiceSeed.xcodeproj -scheme VoiceSeed-iOS \
 
 test-core.shはiOS SDKやXCTestを持たないAppleシリコンMacでも、合成データだけで共有プロトコル・保存・フィラー除去などを検証します。swift testはXCTestを含むXcode環境で実行します。App Groups・マイク・キーボードからの本体起動・背景動作・実際の他アプリへの入力は、実機で確認する別の項目です。
 
+### 実機の音声入力テスト
+
+XcodeのDevice HubでiPhoneの「View Screen」を開いたまま音声をテストしないでください。画面操作中はiPhoneのマイクを使えず、アプリへ無音が渡る場合があります。[Appleの説明](https://developer.apple.com/documentation/xcode/interacting-with-your-app-in-device-hub)。Device Hubの画面接続を終了し、iPhone本体でマイクを一度終了して有効にし直し、iPhoneに向かって話します。Xcodeのデバッグ接続だけは維持できます。
+
+Debugビルドに限り、`--synthetic-dictation`を起動引数に指定すると「明日の打ち合わせは午後3時からです。」という固定文で共有領域からキーボードへの挿入経路をテストできます。実機では通常のマイク待機を維持しますが、音声を認識器へ渡しません。通常の認識テストではこの引数を外します。Releaseビルドはこの引数を無視します。固定文が入っても音声認識の成功とは扱いません。
+
+Debugの診断ログには処理段階、音声フレーム数、音量の集計値、結果の文字数だけを出します。音声や認識した本文は出しません。`test-core.sh`では、合成波形を使い、マイクバッファの再利用後にも音声が保持されることと48kHz→16kHz変換を検証します。
+
 プロジェクトはScripts/generate-project.pyで決定的に生成します。新しいソースを追加した場合は再生成します。
 
 ## 精度と時間の測り方
@@ -61,6 +71,8 @@ test-core.shはiOS SDKやXCTestを持たないAppleシリコンMacでも、合�
 
 ## 現在の検証状態
 
-共有処理36項目、XCTest、かな漢字変換辞書の検証と、アプリ本体・埋め込みキーボードのiOS Simulatorビルドが成功しています。iPhone 16 Pro Maxの独立したシミュレータで初期画面の起動も確認しました。[検証実行](https://github.com/brandsmasaki-lang/voice-seed/actions/runs/43526141966)。iPhone実機の精度・速度・キーボード連携は未確認です。App Storeで配布済みのiPhone版ではありません。
+共有処理36項目、XCTest、かな漢字変換辞書の検証と、アプリ本体・埋め込みキーボードのiOS Simulatorビルドが成功しています。iPhone 16 Pro Maxの独立したシミュレータで初期画面の起動も確認しました。[検証実行](https://github.com/brandsmasaki-lang/voice-seed/actions/runs/43526141966)。App Storeで配布済みのiPhone版ではありません。
+
+2026-11-14にiPhone 16 Pro Max / iOS 27.2.1へ実機インストール・起動し、キーボード表示とマイクの準備完了まで確認しました。準備中に自分自身の音声セッション変更通知でマイクを終了していた処理を修正しています。他アプリへの入力では、話した指定文が正しく入らないとの実機報告があり、連携は未解決です。実機での認識精度・速度の比較も未検証です。
 
 コードはルートのMITライセンスに従います。変換エンジン・辞書・依存ライブラリはTHIRD_PARTY_NOTICES.txtに権利表示を含めます。

@@ -21,12 +21,16 @@ import UIKit
     private var publishingPreviewAt = Date.distantPast
     private var activating = false
     private let synthetic: Bool
+    private let syntheticUI: Bool
+    private var lastDeliveryTrace = ""
 
     init() {
         #if DEBUG
-        synthetic = ProcessInfo.processInfo.arguments.contains("--synthetic-ui")
+        syntheticUI = ProcessInfo.processInfo.arguments.contains("--synthetic-ui")
+        synthetic = syntheticUI || ProcessInfo.processInfo.arguments.contains("--synthetic-dictation")
         #else
         synthetic = false
+        syntheticUI = false
         #endif
         microphone.onInterruption = { [weak self] in self?.disconnect(message: "通話や音声経路の変更によりマイクを終了しました。") }
     }
@@ -34,11 +38,15 @@ import UIKit
     func initialize() async {
         guard store == nil else { return }
         do {
-            if synthetic {
+            if syntheticUI {
                 store = try SharedSessionStore(directory: FileManager.default.temporaryDirectory.appendingPathComponent("VoiceSeed-UI-" + UUID().uuidString))
             } else { store = try AppGroupContainer.open() }
+            IOSPreparationTrace.step(synthetic ? "mode.synthetic" : "mode.realMicrophone")
             try store?.update { $0.disconnect() }
             try reload()
+            if let delivery = state.delivery {
+                lastDeliveryTrace = delivery.id.uuidString + delivery.status.rawValue
+            }
             if synthetic { modelReady = true }
             else { modelReady = await JapaneseSpeechModel.ready() }
             poller = Task { [weak self] in
@@ -67,6 +75,7 @@ import UIKit
                 heartbeatAt = Date(); try update { $0.heartbeat = heartbeatAt }
             }
             if let command = try store.nextCommand(at: Date()) {
+                IOSPreparationTrace.step("command." + command.kind.rawValue)
                 switch command.kind {
                 case .activate: await activate()
                 case .start:
@@ -80,6 +89,13 @@ import UIKit
                 }
             }
             try reload()
+            if let delivery = state.delivery {
+                let key = delivery.id.uuidString + delivery.status.rawValue
+                if key != lastDeliveryTrace {
+                    lastDeliveryTrace = key
+                    IOSPreparationTrace.step("delivery." + delivery.status.rawValue + ".characters=" + String(delivery.text.count))
+                }
+            }
         } catch SharedStoreError.busy { }
         catch { errorMessage = error.localizedDescription }
     }
@@ -99,8 +115,11 @@ import UIKit
         let token = UUID(); generation = token
         do {
             try update { $0.activate(at: Date()) }
+            // A real device still needs the ordinary microphone standby session
+            // while the host app is in the background. Synthetic dictation drops
+            // those buffers and exercises only the keyboard delivery path.
+            if !syntheticUI { try await microphone.activate() }
             if !synthetic {
-                try await microphone.activate()
                 let capture = try await makePrepared()
                 guard generation == token else { capture.cancel(); return }
                 prepared = capture
@@ -125,6 +144,7 @@ import UIKit
         do {
             var accepted = false
             try update { accepted = $0.begin(request, at: Date()) }
+            IOSPreparationTrace.step(accepted ? "capture.accepted" : "capture.rejected")
             guard accepted else { return }
             if synthetic { try update { $0.preview = "明日の打ち合わせは午後3時からです。" }; return }
             guard let capture = prepared else {
@@ -167,6 +187,7 @@ import UIKit
                 let raw: String
                 if self.synthetic { raw = "明日の打ち合わせは午後3時からです。" }
                 else { raw = try await capture?.finish() ?? "" }
+                IOSPreparationTrace.step("recognition.finished.characters=" + String(raw.count))
                 let finalized = Date()
                 guard !Task.isCancelled, self.generation == token, self.state.request?.id == request.id else { return }
                 var text = TextPipeline.process(raw, entries: self.state.settings.dictionary, removeFillers: self.state.settings.removeFillers)

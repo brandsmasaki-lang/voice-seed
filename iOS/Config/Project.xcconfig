@@ -1,3 +1,5 @@
 VOICE_SEED_BUNDLE_ID = jp.ainotane.voice-seed.ios
 VOICE_SEED_APP_GROUP = group.jp.ainotane.voice-seed.ios
 // Select your own Development Team in Xcode. No signing credentials are stored here.
+// Optional settings stay on this Mac and are excluded from Git/public archives.
+#include? "../../.ios-signing.local.xcconfig"
