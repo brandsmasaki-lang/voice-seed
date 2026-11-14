@@ -53,6 +53,13 @@ import UIKit
             if synthetic { modelReady = true }
             else { modelReady = await JapaneseSpeechModel.ready() }
             initialized = true
+            #if DEBUG
+            if syntheticUI && ProcessInfo.processInfo.arguments.contains("--synthetic-keyboard-return") {
+                let ticket = KeyboardLaunch(documentID: "synthetic-return-field", createdAt: Date())
+                try store?.update { $0.keyboardActivationTicket = ticket }
+                pendingKeyboardTicket = ticket.id
+            }
+            #endif
             await activatePendingKeyboardTicket()
             poller = Task { [weak self] in
                 while !Task.isCancelled {
@@ -187,7 +194,6 @@ import UIKit
                 if state.request?.id != request.id { try update { $0.finishWithoutDelivery(request.id) } }
                 return
             }
-            showKeyboardReturn = false
             if synthetic { try update { $0.preview = "明日の打ち合わせは午後3時からです。" }; return }
             guard let capture = prepared else {
                 try update { $0.finishWithoutDelivery(request.id); $0.phase = .preparing }
@@ -215,6 +221,7 @@ import UIKit
 
     func finish() {
         guard var request = state.request, state.phase == .listening else { return }
+        showKeyboardReturn = false
         request.stoppedAt = Date()
         microphone.attach(nil)
         let capture = active; active = nil

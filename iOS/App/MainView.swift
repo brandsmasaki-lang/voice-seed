@@ -5,6 +5,18 @@ struct MainView: View {
     @EnvironmentObject private var model: DictationModel
     @AppStorage("completedInitialSetup") private var completedSetup = false
     var body: some View {
+        Group {
+            if model.showKeyboardReturn {
+                KeyboardReturnView()
+            } else {
+                applicationTabs
+            }
+        }
+        .alert("こえのたね", isPresented: Binding(get: { !model.errorMessage.isEmpty }, set: { if !$0 { model.errorMessage = "" } })) {
+            Button("閉じる") { model.errorMessage = "" }
+        } message: { Text(model.errorMessage) }
+    }
+    private var applicationTabs: some View {
         TabView(selection: $model.selectedTab) {
             NavigationStack { DictationHome() }.tabItem { Label("入力", systemImage: "mic") }.tag(0)
             NavigationStack { DictionaryView() }.tabItem { Label("辞書", systemImage: "text.book.closed") }.tag(1)
@@ -16,14 +28,6 @@ struct MainView: View {
         .fullScreenCover(isPresented: $model.showSetup) {
             SetupFlow { completedSetup = true; model.showSetup = false }
         }
-        .fullScreenCover(isPresented: Binding(
-            get: { model.showKeyboardReturn && completedSetup },
-            set: { if !$0 { model.showKeyboardReturn = false } })) {
-                KeyboardReturnView().environmentObject(model)
-        }
-        .alert("こえのたね", isPresented: Binding(get: { !model.errorMessage.isEmpty }, set: { if !$0 { model.errorMessage = "" } })) {
-            Button("閉じる") { model.errorMessage = "" }
-        } message: { Text(model.errorMessage) }
     }
 }
 
@@ -232,20 +236,39 @@ struct VoiceSeedSettings: View {
 
 private struct KeyboardReturnView: View {
     @EnvironmentObject private var model: DictationModel
+    @State private var swipe = false
     var body: some View {
-        VStack(spacing: 28) {
+        VStack(spacing: 24) {
+            HStack(spacing: 10) {
+                Image("BrandIcon").resizable().frame(width: 30, height: 30).clipShape(RoundedRectangle(cornerRadius: 7))
+                Text("こえのたね").font(.headline)
+                Spacer()
+            }
             Spacer()
-            Image("BrandIcon").resizable().frame(width: 80, height: 80)
-                .clipShape(RoundedRectangle(cornerRadius: 20))
-            if model.state.phase == .ready {
-                Image(systemName: "hand.draw.fill").font(.system(size: 64)).foregroundStyle(.tint)
-                Text("画面の下端を右へスワイプ").font(.title2.bold()).multilineTextAlignment(.center)
-                Text("直前のアプリへ戻ると、聞き取りが始まります。\nマイクを押し直す必要はありません。")
-                    .multilineTextAlignment(.center).foregroundStyle(.secondary)
-                HStack(spacing: 14) {
-                    Capsule().frame(width: 92, height: 6)
-                    Image(systemName: "arrow.right").font(.title2.bold())
-                }.padding(24).background(.quaternary, in: RoundedRectangle(cornerRadius: 24))
+            if model.state.phase == .ready || model.state.phase == .listening {
+                VStack(spacing: 10) {
+                    ForEach(0..<3, id: \.self) { _ in
+                        HStack(spacing: 6) {
+                            ForEach(0..<7, id: \.self) { _ in
+                                RoundedRectangle(cornerRadius: 5).fill(Color.secondary.opacity(0.3)).frame(height: 30)
+                            }
+                        }
+                    }
+                    RoundedRectangle(cornerRadius: 5).fill(Color.secondary.opacity(0.3)).frame(width: 130, height: 30)
+                    ZStack {
+                        Capsule().fill(Color.primary).frame(width: 110, height: 5)
+                        Circle().fill(Color.primary.opacity(0.25)).frame(width: 48, height: 48)
+                            .overlay(Circle().stroke(Color.primary.opacity(0.4), lineWidth: 2))
+                            .offset(x: swipe ? 85 : -85, y: 5)
+                    }.frame(height: 54)
+                }.padding(26).background(.quaternary, in: RoundedRectangle(cornerRadius: 28))
+                    .accessibilityHidden(true)
+                    .onAppear { withAnimation(.easeInOut(duration: 1.4).repeatForever(autoreverses: false)) { swipe = true } }
+                Text("スワイプしてアプリに戻る").font(.title.bold()).multilineTextAlignment(.center)
+                Text("お手数ですが、画面下のバーを横にスワイプして、\n使っていたアプリへ戻ってください。")
+                    .font(.subheadline).multilineTextAlignment(.center).foregroundStyle(.secondary)
+                Text("戻ったら、そのまま話せます。")
+                    .font(.headline).multilineTextAlignment(.center)
             } else if !model.errorMessage.isEmpty {
                 Text(model.errorMessage).multilineTextAlignment(.center)
             } else {

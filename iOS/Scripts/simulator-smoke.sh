@@ -22,6 +22,10 @@ xcrun simctl launch "$voice_seed_ci_device" jp.ainotane.voice-seed.ios --synthet
 # This is an isolated simulator smoke test, not a real microphone or keyboard acceptance test.
 sleep 3
 xcrun simctl io "$voice_seed_ci_device" screenshot .build/smoke/initial-setup.png
+xcrun simctl terminate "$voice_seed_ci_device" jp.ainotane.voice-seed.ios
+xcrun simctl launch "$voice_seed_ci_device" jp.ainotane.voice-seed.ios --synthetic-ui --synthetic-keyboard-return
+sleep 3
+xcrun simctl io "$voice_seed_ci_device" screenshot .build/smoke/keyboard-return.png
 python3 - <<PY
 import json
 json.dump({'simulator':'iPhone 16 Pro Max','runtime':'$voice_seed_ci_runtime','syntheticUI':True,'realMicrophoneTested':False,'physicalDeviceTested':False},open('.build/smoke/verification.json','w'),indent=2)
