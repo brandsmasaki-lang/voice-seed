@@ -50,11 +50,14 @@ enum TextPipeline {
     //    "えー！" and "ええ、賛成です" stay.
     // 3. あー / そのー / まー also need a boundary before them, so "じゃあー、" stays.
     // 4. A bare あの counts only as "あの、" at the start of a phrase.
+    // 5. "ええ。" standing alone between sentences is a drawn-out "えー" as the recognizer writes it.
+    //    At the very start, or as "ええ、…", it is an answer and stays.
     private static let fillerPattern = try! NSRegularExpression(pattern:
         #"(?:え[ー〜～]+っ?と|えっと)(?:(?:ですね|ね|さ|な)?(?=$|[\s、，,。．.])[ \t]*(?:[、，,。．.][ \t]*)?)?"#
         + #"|(?:ええっ?と|え[ー〜～]+|あの[ー〜～]+|ん[ー〜～]+|う[ー〜～]+ん)(?:ですね|ね)?(?=$|[\s、，,。．.])[ \t]*(?:[、，,。．.][ \t]*)?"#
         + #"|(?<![^\s、，,。．.])(?:あ[ー〜～]+|その[ー〜～]+|ま[ー〜～]+)(?:ですね|ね)?(?=$|[\s、，,。．.])[ \t]*(?:[、，,。．.][ \t]*)?"#
-        + #"|(?<![^\s、，,。．.])あの(?=[ \t]*[、，,])[ \t]*[、，,][ \t]*"#)
+        + #"|(?<![^\s、，,。．.])あの(?=[ \t]*[、，,])[ \t]*[、，,][ \t]*"#
+        + #"|(?<=[。．.！？!?][ \t\n]{0,2})ええ[。．.][ \t]*"#)
 
     /// Conservative, local cleanup. Quoted words, affirmations and meaningful modifiers stay.
     static func removeFillers(_ text: String, preserving terms: Set<String> = []) -> String {
