@@ -52,12 +52,15 @@ enum TextPipeline {
     // 4. A bare あの counts only as "あの、" at the start of a phrase.
     // 5. "ええ。" standing alone between sentences is a drawn-out "えー" as the recognizer writes it.
     //    At the very start, or as "ええ、…", it is an answer and stays.
+    // 6. A single "え" at the start of a phrase, glued to katakana, kanji or Latin letters
+    //    ("えファンクション"), is a hesitation. "え？", "え、" and words such as "えび" stay.
     private static let fillerPattern = try! NSRegularExpression(pattern:
         #"(?:え[ー〜～]+っ?と|えっと)(?:(?:ですね|ね|さ|な)?(?=$|[\s、，,。．.])[ \t]*(?:[、，,。．.][ \t]*)?)?"#
         + #"|(?:ええっ?と|え[ー〜～]+|あの[ー〜～]+|ん[ー〜～]+|う[ー〜～]+ん)(?:ですね|ね)?(?=$|[\s、，,。．.])[ \t]*(?:[、，,。．.][ \t]*)?"#
         + #"|(?<![^\s、，,。．.])(?:あ[ー〜～]+|その[ー〜～]+|ま[ー〜～]+)(?:ですね|ね)?(?=$|[\s、，,。．.])[ \t]*(?:[、，,。．.][ \t]*)?"#
         + #"|(?<![^\s、，,。．.])あの(?=[ \t]*[、，,])[ \t]*[、，,][ \t]*"#
-        + #"|(?<=[。．.！？!?][ \t\n]{0,2})ええ[。．.][ \t]*"#)
+        + #"|(?<=[。．.！？!?][ \t\n]{0,2})ええ[。．.][ \t]*"#
+        + #"|(?<![^\s、，,。．.！？!?])え(?=[\p{Katakana}\p{Han}A-Za-zＡ-Ｚａ-ｚ])"#)
 
     /// Conservative, local cleanup. Quoted words, affirmations and meaningful modifiers stay.
     static func removeFillers(_ text: String, preserving terms: Set<String> = []) -> String {
