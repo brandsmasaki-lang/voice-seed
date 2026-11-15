@@ -22,7 +22,27 @@ import Foundation
             ("えっと。今日は金曜日です。", "今日は金曜日です。"),
             ("えー、", ""),
             ("👩‍💻えー、仕事をします。", "👩‍💻仕事をします。"),
-            ("「えー、閉じない引用", "「えー、閉じない引用")
+            ("「えー、閉じない引用", "「えー、閉じない引用"),
+            ("えーっとね。このフィラーを消すのに差を感じます", "このフィラーを消すのに差を感じます"),
+            ("それでえーっと明日は15時です。", "それで明日は15時です。"),
+            ("えっとさっきの件です。", "さっきの件です。"),
+            ("えっとですね、明日です。", "明日です。"),
+            ("あのーですね、資料を送ります。", "資料を送ります。"),
+            ("あー、なるほど。そのー、件ですが。", "なるほど。件ですが。"),
+            ("まー、いいでしょう。", "いいでしょう。"),
+            ("じゃあー、行きます。", "じゃあー、行きます。"),
+            ("そのー！", "そのー！"),
+            ("えっとねこの件です。", "ねこの件です。"),
+            ("ここに表示されます。ええ。音声ファイルはここにあります。", "ここに表示されます。音声ファイルはここにあります。"),
+            ("ええ。賛成です。", "ええ。賛成です。"),
+            ("賛成ですか？ええ、賛成です。", "賛成ですか？ええ、賛成です。"),
+            ("残りません。えファンクションを離すと貼り付けます。", "残りません。ファンクションを離すと貼り付けます。"),
+            ("え本当にそうなの？", "本当にそうなの？"),
+            ("え？本当ですか。", "え？本当ですか。"),
+            ("え、本当ですか。", "え、本当ですか。"),
+            ("えびを食べます。", "えびを食べます。"),
+            ("ハートの絵文字です。", "ハートの絵文字です。"),
+            ("まえ書きです。", "まえ書きです。")
         ]
         for (input, expected) in cases {
             let output = TextPipeline.removeFillers(input)
@@ -35,7 +55,7 @@ import Foundation
         _ = TextPipeline.removeFillers(sample)
         let start = Date()
         for _ in 0..<100 { _ = TextPipeline.removeFillers(sample) }
-        print("PASS: 23 filler cleanup and meaning-preservation checks")
+        print("PASS: \(cases.count + 3) filler cleanup and meaning-preservation checks")
         print(String(format: "Filler cleanup: %.3f ms per %d-character sample (100 iterations)", Date().timeIntervalSince(start) * 10, sample.count))
     }
 }

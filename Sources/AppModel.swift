@@ -3,6 +3,7 @@ import AVFoundation
 import Speech
 import SwiftUI
 import ApplicationServices
+import IOKit.hid
 import UniformTypeIdentifiers
 
 enum RecordingPhase: String {
@@ -42,6 +43,17 @@ enum RecordingPhase: String {
     }
     @Published var fnReady = false
     @Published var pasteReady = false
+    /// True when a permission granted to an earlier build no longer applies to this one.
+    /// System Settings still shows the switch as on in that state, which users cannot diagnose.
+    @Published var permissionsNeedRedo = false
+    private static let grantedBuildKey = "permissionGrantedBuild"
+    private static let currentBuild: String = {
+        let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "?"
+        let path = Bundle.main.executablePath ?? ""
+        let attributes = try? FileManager.default.attributesOfItem(atPath: path)
+        let modified = (attributes?[.modificationDate] as? Date)?.timeIntervalSince1970 ?? 0
+        return "\(version)-\(attributes?[.size] as? Int ?? 0)-\(Int(modified))"
+    }()
     @Published var microphoneStatus = AVCaptureDevice.authorizationStatus(for: .audio)
     @Published var fnLastEvent = "Fnキーを押して離すと、ここで検出を確認できます。"
     @Published var recordingFromFn = false
@@ -76,7 +88,6 @@ enum RecordingPhase: String {
     private var activeEntries: [DictionaryEntry] = []
     private var timer: Timer?
     private var target: NSRunningApplication?
-    private var focusedAtStart: AXUIElement?
     private var pasteThisRecording = false
     private var displayOnlyReason = ""
     private var work: Task<Void, Never>?
@@ -103,6 +114,13 @@ enum RecordingPhase: String {
         if microphoneStatus != microphone { microphoneStatus = microphone }
         let canPaste = AXIsProcessTrusted()
         if pasteReady != canPaste { pasteReady = canPaste }
+        let defaults = UserDefaults.standard
+        if canPaste && defaults.string(forKey: Self.grantedBuildKey) != Self.currentBuild {
+            defaults.set(Self.currentBuild, forKey: Self.grantedBuildKey)
+        }
+        let redo = RecordingPresentation.permissionNeedsRedo(granted: canPaste,
+            grantedBuild: defaults.string(forKey: Self.grantedBuildKey), currentBuild: Self.currentBuild)
+        if permissionsNeedRedo != redo { permissionsNeedRedo = redo }
         let canDetectFn: Bool
         if fnEnabled { canDetectFn = fnMonitor?.start() ?? false }
         else { fnMonitor?.stop(); canDetectFn = false }
@@ -110,9 +128,37 @@ enum RecordingPhase: String {
     }
 
     func requestFnPermission() {
+        // CGRequestListenEventAccess alone can leave the app missing from the Input Monitoring list;
+        // the IOHID request registers it there reliably.
+        _ = IOHIDRequestAccess(kIOHIDRequestTypeListenEvent)
         _ = CGRequestListenEventAccess()
         NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_ListenEvent")!)
         refreshInputPermissions()
+    }
+
+    /// Removes this app's stale Accessibility and Input Monitoring records, then asks again.
+    /// Without this the user must know to delete the entry with "−" and add it back by hand.
+    func redoPermissions() {
+        let bundleID = Bundle.main.bundleIdentifier ?? "jp.ainotane.voice-seed"
+        for service in ["Accessibility", "ListenEvent"] {
+            let process = Process()
+            process.executableURL = URL(fileURLWithPath: "/usr/bin/tccutil")
+            process.arguments = ["reset", service, bundleID]
+            process.standardOutput = FileHandle.nullDevice; process.standardError = FileHandle.nullDevice
+            do { try process.run(); process.waitUntilExit() } catch { continue }
+        }
+        fnMonitor?.stop()
+        UserDefaults.standard.removeObject(forKey: Self.grantedBuildKey)
+        permissionsNeedRedo = false
+        requestAccessibility()
+    }
+
+    func relaunch() {
+        let configuration = NSWorkspace.OpenConfiguration()
+        configuration.createsNewApplicationInstance = true
+        NSWorkspace.shared.openApplication(at: Bundle.main.bundleURL, configuration: configuration) { _, _ in
+            DispatchQueue.main.async { NSApp.terminate(nil) }
+        }
     }
 
     func openKeyboardSettings() {
@@ -210,7 +256,6 @@ enum RecordingPhase: String {
         guard modelReady else { selectedTab = "入力"; notice = "入力画面の「日本語モデルを準備」を押してください。"; presentRecordingResult(); return }
         refreshInputPermissions()
         target = fromShortcut ? NSWorkspace.shared.frontmostApplication : nil
-        focusedAtStart = target.flatMap { Self.focusedElement(in: $0) }
         let externalInput = fromShortcut && target?.processIdentifier != ProcessInfo.processInfo.processIdentifier
         pasteThisRecording = externalInput && canAutomaticallyPaste
         displayOnlyReason = externalInput && autoPaste && !pasteReady
@@ -378,12 +423,15 @@ enum RecordingPhase: String {
         guard RecordingPresentation.canPaste(startingApplication: destination.processIdentifier, currentApplication: NSWorkspace.shared.frontmostApplication?.processIdentifier) else {
             notice = "入力先が切り替わったため貼り付けませんでした。結果はアプリ内に残しています。"; presentRecordingResult(); return
         }
-        guard let initial = focusedAtStart, let current = Self.focusedElement(in: destination), CFEqual(initial, current) else {
-            notice = "入力欄が変わったため貼り付けませんでした。結果はアプリ内に残しています。"; presentRecordingResult(); return
-        }
+        // Many apps (Electron, browsers, web views) do not report a focused element, or hand out
+        // a new element for the same field on every query. Requiring the same element as at the
+        // start therefore blocked legitimate pastes. The frontmost-app check above is the guard;
+        // the focused element is only used, when available, to keep password fields untouched.
         var subrole: CFTypeRef?
-        AXUIElementCopyAttributeValue(current, kAXSubroleAttribute as CFString, &subrole)
-        guard subrole as? String != kAXSecureTextFieldSubrole else {
+        if let current = Self.focusedElement(in: destination) {
+            AXUIElementCopyAttributeValue(current, kAXSubroleAttribute as CFString, &subrole)
+        }
+        guard RecordingPresentation.canPaste(focusedSubrole: subrole as? String) else {
             notice = "パスワード欄には自動で貼り付けません。"; presentRecordingResult(); return
         }
         guard let source = CGEventSource(stateID: .hidSystemState),
@@ -491,6 +539,32 @@ enum RecordingPhase: String {
             } catch VoiceError.noSpeech { clearEmptyInputNotice() }
             catch { notice = error.localizedDescription }
         }
+    }
+
+    /// Registers a correction from the result area and fixes the text on screen right away.
+    func addCorrection(heard: String, written: String) {
+        var entries = dictionary
+        let heard = heard.trimmingCharacters(in: .whitespacesAndNewlines)
+        let written = written.trimmingCharacters(in: .whitespacesAndNewlines)
+        switch DictionaryCorrection.apply(heard: heard, written: written, to: &entries) {
+        case .addedHint: notice = "「\(written)」を認識ヒントに登録しました。次回から、この表記で認識されやすくなります。"
+        case .addedReplacement: notice = "登録しました。次回から「\(heard)」は「\(written)」に置き換えます。"
+        case .updatedReplacement: notice = "更新しました。次回から「\(heard)」は「\(written)」に置き換えます。"
+        case .duplicate: notice = "すでに登録されています。"; return
+        case .invalid: notice = "正しい表記を入力してください。"; return
+        }
+        dictionary = entries
+        if !heard.isEmpty, heard != written, !busy { output = output.replacingOccurrences(of: heard, with: written) }
+    }
+
+    func exportDictionary() {
+        let panel = NSSavePanel()
+        panel.nameFieldStringValue = "こえのたね辞書.json"
+        panel.allowedContentTypes = [.json]
+        panel.message = "iPhone版では「辞書」の取り込みで「CSV / TSV / JSON」を選び、このファイルを読み込みます。"
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        do { try DictionaryCorrection.exportData(dictionary).write(to: url, options: .atomic); notice = "辞書を書き出しました（\(dictionary.count)件）。" }
+        catch { notice = "辞書の書き出し: \(error.localizedDescription)" }
     }
 
     private func saveDictionary() {

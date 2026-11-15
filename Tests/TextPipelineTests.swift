@@ -11,6 +11,16 @@ import Foundation
         precondition(!TextPipeline.acceptsRefinement(original: "長い話も省略せずにそのまま文章として残してください。", candidate: "了解です"), "Reject obvious truncation")
         precondition(!TextPipeline.acceptsRefinement(original: "こんにちは", candidate: ""))
         precondition(!TextPipeline.acceptsRefinement(original: "気温は15度です", candidate: "気温は-15度です。"), "Preserve numeric signs")
-        print("PASS: 8 text pipeline checks")
+        var list: [DictionaryEntry] = []
+        precondition(DictionaryCorrection.apply(heard: "", written: "Aqua Voice", to: &list) == .addedHint && list[0].isVocabulary)
+        precondition(DictionaryCorrection.apply(heard: " ", written: "aqua voice", to: &list) == .duplicate && list.count == 1, "Hints are not duplicated")
+        precondition(DictionaryCorrection.apply(heard: "アクアボイスト", written: "Aqua Voiceと", to: &list) == .addedReplacement)
+        precondition(TextPipeline.applyDictionary("アクアボイストの差", entries: list) == "Aqua Voiceとの差", "A registered correction fixes the same mistake next time")
+        precondition(DictionaryCorrection.apply(heard: "アクアボイスト", written: "AquaVoiceと", to: &list) == .updatedReplacement && list.count == 2, "Re-registering a mistake updates it")
+        precondition(DictionaryCorrection.apply(heard: "アクアボイスト", written: "AquaVoiceと", to: &list) == .duplicate)
+        precondition(DictionaryCorrection.apply(heard: "何か", written: "  ", to: &list) == .invalid && list.count == 2)
+        let exported = try! JSONSerialization.jsonObject(with: DictionaryCorrection.exportData(list)) as! [String: [[String: String]]]
+        precondition(exported["entries"]!.count == 2 && exported["entries"]!.contains { $0["kind"] == "vocabulary" && $0["written"] == "Aqua Voice" }, "Export keeps hints and replacements apart")
+        print("PASS: 16 text pipeline checks")
     }
 }
