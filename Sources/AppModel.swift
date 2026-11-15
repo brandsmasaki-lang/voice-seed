@@ -541,6 +541,32 @@ enum RecordingPhase: String {
         }
     }
 
+    /// Registers a correction from the result area and fixes the text on screen right away.
+    func addCorrection(heard: String, written: String) {
+        var entries = dictionary
+        let heard = heard.trimmingCharacters(in: .whitespacesAndNewlines)
+        let written = written.trimmingCharacters(in: .whitespacesAndNewlines)
+        switch DictionaryCorrection.apply(heard: heard, written: written, to: &entries) {
+        case .addedHint: notice = "「\(written)」を認識ヒントに登録しました。次回から、この表記で認識されやすくなります。"
+        case .addedReplacement: notice = "登録しました。次回から「\(heard)」は「\(written)」に置き換えます。"
+        case .updatedReplacement: notice = "更新しました。次回から「\(heard)」は「\(written)」に置き換えます。"
+        case .duplicate: notice = "すでに登録されています。"; return
+        case .invalid: notice = "正しい表記を入力してください。"; return
+        }
+        dictionary = entries
+        if !heard.isEmpty, heard != written, !busy { output = output.replacingOccurrences(of: heard, with: written) }
+    }
+
+    func exportDictionary() {
+        let panel = NSSavePanel()
+        panel.nameFieldStringValue = "こえのたね辞書.json"
+        panel.allowedContentTypes = [.json]
+        panel.message = "iPhone版では「辞書」の取り込みで「CSV / TSV / JSON」を選び、このファイルを読み込みます。"
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        do { try DictionaryCorrection.exportData(dictionary).write(to: url, options: .atomic); notice = "辞書を書き出しました（\(dictionary.count)件）。" }
+        catch { notice = "辞書の書き出し: \(error.localizedDescription)" }
+    }
+
     private func saveDictionary() {
         if let data = try? JSONEncoder().encode(dictionary) { UserDefaults.standard.set(data, forKey: "dictionary") }
     }

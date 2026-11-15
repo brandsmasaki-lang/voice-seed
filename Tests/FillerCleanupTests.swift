@@ -22,7 +22,17 @@ import Foundation
             ("えっと。今日は金曜日です。", "今日は金曜日です。"),
             ("えー、", ""),
             ("👩‍💻えー、仕事をします。", "👩‍💻仕事をします。"),
-            ("「えー、閉じない引用", "「えー、閉じない引用")
+            ("「えー、閉じない引用", "「えー、閉じない引用"),
+            ("えーっとね。このフィラーを消すのに差を感じます", "このフィラーを消すのに差を感じます"),
+            ("それでえーっと明日は15時です。", "それで明日は15時です。"),
+            ("えっとさっきの件です。", "さっきの件です。"),
+            ("えっとですね、明日です。", "明日です。"),
+            ("あのーですね、資料を送ります。", "資料を送ります。"),
+            ("あー、なるほど。そのー、件ですが。", "なるほど。件ですが。"),
+            ("まー、いいでしょう。", "いいでしょう。"),
+            ("じゃあー、行きます。", "じゃあー、行きます。"),
+            ("そのー！", "そのー！"),
+            ("えっとねこの件です。", "ねこの件です。")
         ]
         for (input, expected) in cases {
             let output = TextPipeline.removeFillers(input)
@@ -35,7 +45,7 @@ import Foundation
         _ = TextPipeline.removeFillers(sample)
         let start = Date()
         for _ in 0..<100 { _ = TextPipeline.removeFillers(sample) }
-        print("PASS: 23 filler cleanup and meaning-preservation checks")
+        print("PASS: \(cases.count + 3) filler cleanup and meaning-preservation checks")
         print(String(format: "Filler cleanup: %.3f ms per %d-character sample (100 iterations)", Date().timeIntervalSince(start) * 10, sample.count))
     }
 }

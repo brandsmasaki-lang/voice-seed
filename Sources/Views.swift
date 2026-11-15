@@ -159,6 +159,7 @@ struct MainView: View {
                     ScrollView { Text(model.original).font(.system(size: 11)).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading).padding(.top, 8) }.frame(maxHeight: 75)
                 }.font(.system(size: 10)).foregroundStyle(.secondary).padding(.top, 9)
             }
+            QuickCorrectionView(model: model).padding(.top, 9)
             HStack {
                 Toggle("フィラー除去（ルール）", isOn: $model.removeFillers).toggleStyle(.switch).controlSize(.mini)
                     .font(.system(size: 10)).disabled(model.busy)
@@ -388,6 +389,29 @@ struct UpdateMenuItem: View {
     @Published var written = ""
 }
 
+/// Lets a mistake be registered where it is noticed, instead of on the dictionary tab.
+struct QuickCorrectionView: View {
+    @ObservedObject var model: AppModel
+    @StateObject private var form = DictionaryForm()
+    var body: some View {
+        VStack(alignment: .leading, spacing: 5) {
+            HStack(spacing: 6) {
+                Label("間違いを辞書に登録", systemImage: "character.book.closed").foregroundStyle(.secondary).fixedSize()
+                TextField("間違って出た言葉（空欄ならヒントとして登録）", text: $form.heard)
+                Image(systemName: "arrow.right").foregroundStyle(.secondary)
+                TextField("正しい表記", text: $form.written).onSubmit(register)
+                Button("登録", action: register)
+                    .disabled(form.written.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || model.busy)
+            }.textFieldStyle(.roundedBorder)
+        }.font(.system(size: 11))
+    }
+    private func register() {
+        guard !form.written.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, !model.busy else { return }
+        model.addCorrection(heard: form.heard, written: form.written)
+        form.heard = ""; form.written = ""
+    }
+}
+
 struct DictionaryView: View {
     @ObservedObject var model: AppModel
     @StateObject private var form = DictionaryForm()
@@ -402,6 +426,8 @@ struct DictionaryView: View {
                         Button(source.rawValue + "から…") { model.chooseDictionary(source: source) }
                     }
                 }.disabled(model.busy || model.readingDictionary)
+                Button("辞書を書き出す") { model.exportDictionary() }.disabled(model.dictionary.isEmpty)
+                    .help("iPhone版や別のMacへ移すためのファイルを保存します")
             }
             Text("名前や専門用語の表記を登録できます。認識のヒントと、認識後の置換に使います。")
                 .font(.system(size: 12)).foregroundStyle(.secondary)
