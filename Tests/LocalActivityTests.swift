@@ -78,6 +78,13 @@ import Foundation
         check(!RecordingPresentation.canPaste(startingApplication: nil, currentApplication: 10), "Unknown original app cannot receive paste")
         check(!RecordingPresentation.canPaste(startingApplication: 10, currentApplication: nil), "Unknown frontmost app cannot receive paste")
         check(!RecordingPresentation.canPaste(startingApplication: nil, currentApplication: nil), "Two missing app identifiers are not a match")
+        check(RecordingPresentation.canPaste(focusedSubrole: nil), "Apps that do not report a focused element still receive paste")
+        check(RecordingPresentation.canPaste(focusedSubrole: "AXSearchField"), "Ordinary fields receive paste")
+        check(!RecordingPresentation.canPaste(focusedSubrole: "AXSecureTextField"), "Password fields never receive paste")
+        check(RecordingPresentation.permissionNeedsRedo(granted: false, grantedBuild: "11-a", currentBuild: "12-b"), "A grant from an earlier build is reported as needing a redo")
+        check(!RecordingPresentation.permissionNeedsRedo(granted: false, grantedBuild: nil, currentBuild: "12-b"), "A first install is an ordinary request, not a redo")
+        check(!RecordingPresentation.permissionNeedsRedo(granted: false, grantedBuild: "12-b", currentBuild: "12-b"), "Switching the permission off on the same build is not a redo")
+        check(!RecordingPresentation.permissionNeedsRedo(granted: true, grantedBuild: "11-a", currentBuild: "12-b"), "A working permission never asks for a redo")
         print("PASS: \(checks) local history, usage and focus policy checks (synthetic data only)")
     }
 }

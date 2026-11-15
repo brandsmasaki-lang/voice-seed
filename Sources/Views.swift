@@ -96,8 +96,9 @@ struct MainView: View {
             Text(model.phase.title).font(.system(size: 27, weight: .semibold)).tracking(-0.6)
             Text(model.phase == .idle ? (model.needsInputSetup ? "下の準備状況を確認してください。設定画面へ移動せずに準備できます。" : model.fnEnabled ? "入力先で Fn を押しながら話し、離すと入力できます。" : "思いついたことを、そのまま話してください。") : model.phase == .recording ? (model.recordingFromFn ? (model.canAutomaticallyPaste ? "Fn を離すと、文字起こしして元の入力欄に貼り付けます。" : "Fn を離すと、認識結果をこのアプリに表示します。") : "もう一度ボタンを押すと、音声入力を終了します。") : "音声は外部に送信せず、このMacで処理しています。")
                 .font(.system(size: 12)).foregroundStyle(.secondary).padding(.top, 8)
-            if model.needsInputSetup && model.phase == .idle {
-                InputSetupView(model: model).padding(.top, 15)
+            if model.phase == .idle {
+                if model.needsInputSetup { InputSetupView(model: model).padding(.top, 15) }
+                else { InputReadyView(model: model).padding(.top, 15) }
             }
             ZStack {
                 if !model.needsInputSetup || model.phase != .idle {
@@ -195,28 +196,41 @@ struct InputSetupView: View {
                 Text("初回はモデルのダウンロードが必要です。「準備完了」まで待ってください。Apple Intelligenceの設定とは別です。")
                     .font(.system(size: 10)).foregroundStyle(.secondary)
             }
-            if model.microphoneStatus != .authorized {
-                HStack {
-                    Text("マイク：\(model.microphoneStatus == .notDetermined ? "初回の許可が必要" : "許可が必要")")
-                    Spacer()
-                    Button("マイクを許可する") { model.requestMicrophonePermission() }
-                }
+            else { statusRow(done: true, title: "日本語モデル", pending: "", button: "") {} }
+            statusRow(done: model.microphoneStatus == .authorized, title: "マイク",
+                      pending: model.microphoneStatus == .notDetermined ? "初回の許可が必要" : "許可が必要",
+                      button: "マイクを許可する") { model.requestMicrophonePermission() }
+            // Accessibility also allows the Fn key monitor, so ask for that single permission first.
+            // Input Monitoring is only requested when paste is off or Accessibility alone was not enough.
+            let needsAccessibility = model.autoPaste && !model.pasteReady
+            if model.autoPaste {
+                statusRow(done: model.pasteReady, title: model.fnEnabled && needsAccessibility ? "Fnキーの検知・自動貼り付け" : "自動貼り付け",
+                          pending: "アクセシビリティの許可が必要", button: "許可する") { model.requestAccessibility() }
             }
-            if model.fnEnabled && !model.fnReady {
-                HStack {
-                    Text("Fnキーの検知：入力監視の許可が必要")
-                    Spacer()
-                    Button("入力監視を設定する") { model.requestFnPermission() }
-                }
+            if model.fnEnabled && !needsAccessibility {
+                statusRow(done: model.fnReady, title: "Fnキーの検知", pending: "入力監視の許可が必要",
+                          button: "入力監視を設定する") { model.requestFnPermission() }
             }
-            if model.autoPaste && !model.pasteReady {
-                HStack {
-                    Text("自動貼り付け：アクセシビリティの許可が必要")
-                    Spacer()
-                    Button("貼り付けを許可する") { model.requestAccessibility() }
-                }
-                Text("この許可がなくても音声入力と文字起こしはできます。結果はこのアプリに表示します。")
-                    .font(.system(size: 10)).foregroundStyle(.secondary)
+            if (model.fnEnabled && !model.fnReady) || needsAccessibility {
+                VStack(alignment: .leading, spacing: 6) {
+                    if model.permissionsNeedRedo {
+                        Label("アプリを更新したため、許可のやり直しが必要です", systemImage: "exclamationmark.triangle.fill")
+                            .font(.system(size: 12, weight: .semibold)).foregroundStyle(.orange)
+                        Text("システム設定では「こえのたね」がオンに見えますが、それは更新前の版への許可で、今の版には効いていません。下のボタンが古い許可を消して、新しく申請します。開いた一覧で「こえのたね」をオンにするだけで完了です。")
+                            .fixedSize(horizontal: false, vertical: true)
+                        Button("許可をやり直す") { model.redoPermissions() }.keyboardShortcut(.defaultAction)
+                    } else {
+                        Text("開いたシステム設定の一覧で「こえのたね」をオンにしてください。一覧に出てこないときは「＋」を押し、アプリケーションフォルダの「こえのたね」を選びます。")
+                            .fixedSize(horizontal: false, vertical: true)
+                        HStack {
+                            Text("オンにしたのに「未」のまま変わらないとき：")
+                            Button("許可をやり直す") { model.redoPermissions() }
+                            Button("こえのたねを開き直す") { model.relaunch() }
+                        }
+                        Text("「許可をやり直す」は古い許可の記録を消して申請し直します。アプリの更新後は、オンに見えても前の版への許可のままになっていることがあります。")
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }.font(.system(size: 10)).foregroundStyle(.secondary)
             }
             HStack {
                 Button("準備状況を再確認") { Task { await model.refresh(); model.refreshInputPermissions() } }
@@ -225,6 +239,39 @@ struct InputSetupView: View {
                 Link("設定で困ったとき", destination: URL(string: "https://ai-no-tane.com/lp/koenotane/#troubleshooting")!)
             }
         }.font(.system(size: 11)).padding(14).background(.white, in: RoundedRectangle(cornerRadius: 12))
+    }
+
+    private func statusRow(done: Bool, title: String, pending: String, button: String, action: @escaping () -> Void) -> some View {
+        HStack(spacing: 7) {
+            Image(systemName: done ? "checkmark.circle.fill" : "circle").foregroundStyle(done ? green : Color.orange)
+            Text(title).fontWeight(.medium)
+            Text(done ? "済み" : "未：\(pending)").foregroundStyle(done ? green : Color.secondary)
+            Spacer()
+            if !done { Button(button, action: action) }
+        }
+        .accessibilityElement(children: .combine)
+    }
+}
+
+/// Shown only when every requirement for the current settings is met, so that
+/// "ready to use" is visible instead of being implied by an absent checklist.
+struct InputReadyView: View {
+    @ObservedObject var model: AppModel
+    var body: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "checkmark.seal.fill").font(.system(size: 20)).foregroundStyle(green)
+            VStack(alignment: .leading, spacing: 3) {
+                Text("これで使えます！").font(.system(size: 13, weight: .semibold)).foregroundStyle(green)
+                Text((["日本語モデル", "マイク"] + (model.fnEnabled ? ["Fnキーの検知"] : []) + (model.autoPaste ? ["自動貼り付け"] : []))
+                    .map { "✓ " + $0 }.joined(separator: "　"))
+                    .font(.system(size: 10)).foregroundStyle(.secondary)
+            }
+            Spacer()
+        }
+        .padding(.horizontal, 14).padding(.vertical, 10)
+        .background(green.opacity(0.10), in: RoundedRectangle(cornerRadius: 12))
+        .overlay(RoundedRectangle(cornerRadius: 12).stroke(green.opacity(0.35)))
+        .accessibilityElement(children: .combine)
     }
 }
 
