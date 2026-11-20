@@ -86,7 +86,7 @@ import FoundationModels
             Task { @MainActor in model?.refreshInputPermissions() }
         }
         sleepObserver = NSWorkspace.shared.notificationCenter.addObserver(forName: NSWorkspace.willSleepNotification, object: nil, queue: .main) { [weak model] _ in
-            MainActor.assumeIsolated { model?.fnInterrupted() }
+            MainActor.assumeIsolated { model?.prepareForSleep() }
         }
         // Avoid App Nap while processing, without preventing ordinary system sleep.
         activity = ProcessInfo.processInfo.beginActivity(options: .userInitiatedAllowingIdleSystemSleep, reason: "音声入力の待機")
@@ -126,11 +126,16 @@ import FoundationModels
             }
             return
         }
+        #if APP_STORE
+        installationReady = true
+        if let model = pendingModel { pendingModel = nil; connect(model) }
+        #else
         ApplicationInstallCoordinator.prepare { [weak self] in
             guard let self else { return }
             self.installationReady = true
             if let model = self.pendingModel { self.pendingModel = nil; self.connect(model) }
         }
+        #endif
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { false }

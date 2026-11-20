@@ -1,0 +1,6 @@
+VOICE_SEED_BUNDLE_ID = jp.ainotane.koenotane.ios
+VOICE_SEED_APP_GROUP = group.jp.ainotane.koenotane.ios
+// BRANS BANK SYSTEMS, K.K. Team IDs are public identifiers, not signing credentials.
+DEVELOPMENT_TEAM = NRX77TLPW7
+// Optional settings stay on this Mac and are excluded from Git/public archives.
+#include? "../../.ios-signing.local.xcconfig"

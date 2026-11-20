@@ -20,12 +20,14 @@ struct SpeechModelAccess {
 }
 
 enum SpeechService {
-    static func module() async throws -> SpeechTranscriber {
-        guard SpeechTranscriber.isAvailable,
-              let locale = await SpeechTranscriber.supportedLocale(equivalentTo: Locale(identifier: "ja-JP")) else {
+    static func module(progressive: Bool = false) async throws -> DictationTranscriber {
+        guard let locale = await DictationTranscriber.supportedLocale(equivalentTo: Locale(identifier: "ja-JP")) else {
             throw VoiceError.message("このMacでは日本語のローカル音声認識を利用できません。macOS 26以降のAppleシリコンMacが必要です。")
         }
-        return SpeechTranscriber(locale: locale, preset: .transcription)
+        let preset: DictationTranscriber.Preset = progressive ? .progressiveLongDictation : .longDictation
+        return DictationTranscriber(locale: locale, contentHints: preset.contentHints,
+            transcriptionOptions: preset.transcriptionOptions.union([.punctuation]),
+            reportingOptions: preset.reportingOptions, attributeOptions: preset.attributeOptions)
     }
 
     static func status() async -> String {
@@ -59,14 +61,15 @@ enum SpeechService {
         }
         let analyzer = SpeechAnalyzer(modules: [transcriber])
         let context = AnalysisContext()
-        context.contextualStrings[.general] = vocabulary
+        context.contextualStrings[.general] = Array(Set(vocabulary + ["GitHub"]))
         try await analyzer.setContext(context)
         let reader = Task {
-            var text = ""
+            var text = TranscriptBuffer(paragraphPause: 1.2)
             for try await result in transcriber.results {
-                text += String(result.text.characters)
+                text.update(start: result.range.start.seconds, end: result.range.end.seconds,
+                            text: String(result.text.characters), isFinal: result.isFinal)
             }
-            return text.trimmingCharacters(in: .whitespacesAndNewlines)
+            return JapaneseSentenceEnding.complete(DeveloperTermCorrection.apply(text.finalText))
         }
         do {
             let audio = try AVAudioFile(forReading: file)
@@ -97,7 +100,22 @@ enum SpeechService {
 
     static var canRefine: Bool { SystemLanguageModel.default.availability == .available }
 
-    static func refine(_ text: String) async throws -> String {
+    static func refine(_ text: String, using generate: (String) async throws -> String = generateRefinement) async throws -> String {
+        try Task.checkCancellation()
+        do {
+            let candidate = try await generate(text).trimmingCharacters(in: .whitespacesAndNewlines)
+            try Task.checkCancellation()
+            return TextPipeline.acceptsRefinement(original: text, candidate: candidate) ? candidate : text
+        } catch is CancellationError {
+            throw CancellationError()
+        } catch {
+            // Formatting is optional. A model refusal or failure must not stop dictation.
+            try Task.checkCancellation()
+            return text
+        }
+    }
+
+    private static func generateRefinement(_ text: String) async throws -> String {
         guard canRefine else { throw VoiceError.message(refinementStatus) }
         // Deliberately use only SystemLanguageModel; never PrivateCloudComputeLanguageModel.
         let session = LanguageModelSession(instructions: """
@@ -108,10 +126,6 @@ enum SpeechService {
         校正後の本文だけを返してください。説明、見出し、引用符は不要です。
         """)
         let response = try await session.respond(to: "文字起こし本文:\n\(text)", options: GenerationOptions(temperature: 0, maximumResponseTokens: 2048))
-        let candidate = response.content.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard TextPipeline.acceptsRefinement(original: text, candidate: candidate) else {
-            throw VoiceError.message("文章整形で省略や数字の変更が検出されたため、元の認識結果を残しました。")
-        }
-        return candidate
+        return response.content
     }
 }

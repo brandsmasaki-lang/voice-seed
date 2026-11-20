@@ -3,6 +3,8 @@ import AVFoundation
 import Speech
 import SwiftUI
 import ApplicationServices
+import Carbon
+import CoreAudio
 import IOKit.hid
 import UniformTypeIdentifiers
 
@@ -60,6 +62,7 @@ enum RecordingPhase: String {
     @Published var pendingDictionaryImport: DictionaryImportPreview?
     @Published var readingDictionary = false
     @Published var livePreview = ""
+    @Published private(set) var playbackMuteFailed = false
     @Published var lastFinalizeSeconds: Double?
     var fnMonitor: FnKeyMonitor?
     private var holdRecording = HoldRecordingState()
@@ -78,11 +81,14 @@ enum RecordingPhase: String {
     @Published var shortcut: Int = UserDefaults.standard.integer(forKey: "shortcut") {
         didSet {
             UserDefaults.standard.set(shortcut, forKey: "shortcut")
-            hotkeyStatus = hotkey?.register(choice: shortcut) == true ? "" : "ショートカットを登録できません。別の組み合わせを選んでください。"
+            hotkeyStatus = hotkey?.register(choice: shortcut) == true ? "" : (shortcut == 3 ? "Control＋Commandには\(InputAccess.listenPermissionName)の許可が必要です。" : "ショートカットを登録できません。別の組み合わせを選んでください。")
         }
     }
     var hotkey: GlobalHotkey?
     var hud: RecordingHUD?
+    private var capture: MicrophoneCapture?
+    private var outputMute: RecordingOutputMute?
+    private var analysisTask: Task<StreamingSpeechSession, Error>?
     private var liveSession: StreamingSpeechSession?
     private var warmTask: Task<StreamingSpeechSession, Error>?
     private var activeEntries: [DictionaryEntry] = []
@@ -103,16 +109,19 @@ enum RecordingPhase: String {
     var busy: Bool { phase != .idle || updater.sessionInProgress }
     var displayedOutput: String { busy && !livePreview.isEmpty ? livePreview : output }
     var duration: String { String(format: "%02d:%02d", seconds / 60, seconds % 60) }
-    var shortcutLabel: String { ["⌃ ⌥ Space", "⌘ ⇧ Space", "⌃ ⇧ Space"][min(max(shortcut, 0), 2)] }
+    var shortcutLabel: String { ["⌃ ⌥ Space", "⌘ ⇧ Space", "⌃ ⇧ Space", "⌃ ⌘"][min(max(shortcut, 0), 3)] }
     var needsInputSetup: Bool {
         !modelReady || microphoneStatus != .authorized || (fnEnabled && !fnReady) || (autoPaste && !pasteReady)
     }
     var canAutomaticallyPaste: Bool { autoPaste && pasteReady }
 
     func refreshInputPermissions() {
+        if shortcut == 3, let hotkey {
+            hotkeyStatus = hotkey.refreshModifierShortcut(choice: shortcut) ? "" : "Control＋Commandには\(InputAccess.listenPermissionName)の許可が必要です。"
+        }
         let microphone = AVCaptureDevice.authorizationStatus(for: .audio)
         if microphoneStatus != microphone { microphoneStatus = microphone }
-        let canPaste = AXIsProcessTrusted()
+        let canPaste = InputAccess.canPaste
         if pasteReady != canPaste { pasteReady = canPaste }
         let defaults = UserDefaults.standard
         if canPaste && defaults.string(forKey: Self.grantedBuildKey) != Self.currentBuild {
@@ -139,6 +148,11 @@ enum RecordingPhase: String {
     /// Removes this app's stale Accessibility and Input Monitoring records, then asks again.
     /// Without this the user must know to delete the entry with "−" and add it back by hand.
     func redoPermissions() {
+        #if APP_STORE
+        fnMonitor?.stop()
+        requestFnPermission()
+        requestAccessibility()
+        #else
         let bundleID = Bundle.main.bundleIdentifier ?? "jp.ainotane.voice-seed"
         for service in ["Accessibility", "ListenEvent"] {
             let process = Process()
@@ -151,6 +165,7 @@ enum RecordingPhase: String {
         UserDefaults.standard.removeObject(forKey: Self.grantedBuildKey)
         permissionsNeedRedo = false
         requestAccessibility()
+        #endif
     }
 
     func relaunch() {
@@ -167,7 +182,6 @@ enum RecordingPhase: String {
 
     func fnPressed() {
         fnLastEvent = "Fn を押しています。"
-        refreshInputPermissions()
         let ownSettingsFrontmost = ["設定", "アプリについて"].contains(selectedTab)
             && NSWorkspace.shared.frontmostApplication?.processIdentifier == ProcessInfo.processInfo.processIdentifier
         switch FnStartPolicy.action(enabled: fnEnabled, busy: busy, installing: installing,
@@ -254,7 +268,6 @@ enum RecordingPhase: String {
         guard !busy, !installing else { return }
         resultPresentation = .forRecording(startedFromGlobalKey: fromShortcut)
         guard modelReady else { selectedTab = "入力"; notice = "入力画面の「日本語モデルを準備」を押してください。"; presentRecordingResult(); return }
-        refreshInputPermissions()
         target = fromShortcut ? NSWorkspace.shared.frontmostApplication : nil
         let externalInput = fromShortcut && target?.processIdentifier != ProcessInfo.processInfo.processIdentifier
         pasteThisRecording = externalInput && canAutomaticallyPaste
@@ -270,25 +283,62 @@ enum RecordingPhase: String {
         activeEntries = dictionary
         let id = UUID()
         sessionID = id
-        work = Task { [self] in
-            let allowed = await AVCaptureDevice.requestAccess(for: .audio)
-            refreshInputPermissions()
+        work = Task {
             guard !Task.isCancelled, sessionID == id else { return }
-            guard allowed else {
-                phase = .idle
-                holdRecording.reset(); recordingFromFn = false
-                notice = "マイクが許可されていません。「システム設定 → プライバシーとセキュリティ → マイク」でこえのたねを許可してください。"
-                selectedTab = "入力"
-                presentRecordingResult()
-                return
+            if AVCaptureDevice.authorizationStatus(for: .audio) != .authorized {
+                let allowed = await AVCaptureDevice.requestAccess(for: .audio)
+                guard !Task.isCancelled, sessionID == id else { return }
+                refreshInputPermissions()
+                guard allowed else {
+                    fail(VoiceError.message("マイクが許可されていません。「システム設定 → プライバシーとセキュリティ → マイク」でこえのたねを許可してください。"))
+                    return
+                }
             }
+            work = nil
+            beginCapture(id: id)
+        }
+    }
+
+    private func beginCapture(id: UUID) {
+        outputMute = RecordingOutputMute.begin { [weak self] in
+            self?.captureInterrupted(id: id, error: VoiceError.message("音声の出力先が変わりました。もう一度音声入力してください。"))
+        }
+        playbackMuteFailed = outputMute == nil
+        let capture = MicrophoneCapture()
+        self.capture = capture
+        do {
+            try capture.start { [weak self] error in
+                self?.captureInterrupted(id: id, error: error)
+            }
+        } catch {
+            fail(error)
+            return
+        }
+
+        seconds = 0
+        startedAt = Date()
+        phase = .recording
+        hud?.show()
+        timer = Timer.scheduledTimer(withTimeInterval: 0.08, repeats: true) { [weak self] _ in
+            Task { @MainActor in
+                guard let self, self.phase == .recording else { return }
+                self.seconds = Int(Date().timeIntervalSince(self.startedAt))
+                if self.seconds >= 300 { self.stop() }
+            }
+        }
+
+        let pending = warmTask
+        warmTask = nil
+        let vocabulary = activeEntries.map(\.written)
+        analysisTask = Task { [self] in
             do {
-                let pending = warmTask
-                warmTask = nil
                 let session: StreamingSpeechSession
                 if let pending { session = try await pending.value }
-                else { session = try await StreamingSpeechSession.prepare(vocabulary: activeEntries.map(\.written)) }
-                guard !Task.isCancelled, sessionID == id else { session.cancel(); return }
+                else { session = try await StreamingSpeechSession.prepare(vocabulary: vocabulary) }
+                guard !Task.isCancelled, sessionID == id else {
+                    session.cancel()
+                    throw CancellationError()
+                }
                 liveSession = session
                 session.onPreview = { [weak self] text in
                     guard let self, self.sessionID == id, self.busy else { return }
@@ -302,33 +352,44 @@ enum RecordingPhase: String {
                     guard let self, self.sessionID == id, self.phase == .recording else { return }
                     self.fail(error)
                 }
-                try await session.startMicrophone()
-                guard !Task.isCancelled, sessionID == id else { session.cancel(); return }
-                seconds = 0
-                startedAt = Date()
-                phase = .recording
-                hud?.show()
-                timer = Timer.scheduledTimer(withTimeInterval: 0.08, repeats: true) { [weak self] _ in
-                    Task { @MainActor in
-                        guard let self, self.phase == .recording else { return }
-                        self.seconds = Int(Date().timeIntervalSince(self.startedAt))
-                        if self.seconds >= 300 { self.stop() }
-                    }
-                }
+                try await session.start(buffers: capture.buffers)
+                return session
             } catch {
-                guard sessionID == id, !Task.isCancelled else { return }
-                fail(error)
+                if sessionID == id {
+                    if phase == .recording { fail(error) }
+                    else { liveSession?.cancel() }
+                }
+                throw error
             }
         }
     }
 
+    private func endCapture(cancelled: Bool = false) {
+        capture?.end(cancelled: cancelled)
+        capture = nil
+        outputMute?.restore()
+        outputMute = nil
+        playbackMuteFailed = false
+    }
+
+    private func captureInterrupted(id: UUID, error: Error) {
+        guard sessionID == id else { return }
+        if phase == .recording { fail(error) }
+        else if phase == .transcribing { endCapture() }
+    }
+
+    func prepareForSleep() {
+        if phase == .transcribing { endCapture() }
+        else { cancel() }
+    }
+
     func stop() {
-        guard phase == .recording, let session = liveSession else { return }
+        guard phase == .recording, let analysisTask, let capture else { return }
         let released = Date()
+        capture.markRelease(at: AudioGetCurrentHostTime())
         timer?.invalidate(); timer = nil
         level = 0
         phase = .transcribing
-        session.endAudio()
         holdRecording.reset(); recordingFromFn = false
         let entries = activeEntries
         let useLLM = refineText
@@ -340,9 +401,13 @@ enum RecordingPhase: String {
             var completedText: String?
             defer {
                 if let completedText { recordActivity(text: completedText, application: destination?.localizedName ?? "こえのたね", inputSeconds: Date().timeIntervalSince(requestStarted)) }
-                liveSession = nil; livePreview = ""; phase = .idle; hud?.hideRecording(); work = nil; prewarm()
+                self.analysisTask = nil; liveSession = nil; livePreview = ""; phase = .idle; hud?.hideRecording(); work = nil; prewarm()
             }
             do {
+                await capture.waitForTail()
+                try Task.checkCancellation()
+                endCapture()
+                let session = try await analysisTask.value
                 let recognized = try await session.finish()
                 lastFinalizeSeconds = Date().timeIntervalSince(released)
                 try Task.checkCancellation()
@@ -375,10 +440,7 @@ enum RecordingPhase: String {
 
     func cancel(silently: Bool = false) {
         guard phase == .recording || phase == .preparing else { return }
-        sessionID = UUID()
-        work?.cancel(); work = nil
-        timer?.invalidate(); timer = nil
-        liveSession?.cancel(); liveSession = nil
+        discardCapture()
         livePreview = ""; phase = .idle; level = 0; hud?.hide()
         holdRecording.reset(); recordingFromFn = false
         notice = silently ? "" : "音声入力をキャンセルしました。"
@@ -386,10 +448,18 @@ enum RecordingPhase: String {
         prewarm()
     }
 
-    func fail(_ error: Error) {
+    private func discardCapture() {
+        sessionID = UUID()
+        work?.cancel(); work = nil
+        analysisTask?.cancel(); analysisTask = nil
         timer?.invalidate(); timer = nil
+        endCapture(cancelled: true)
         liveSession?.cancel(); liveSession = nil
-        livePreview = ""; phase = .idle; hud?.hide()
+    }
+
+    func fail(_ error: Error) {
+        discardCapture()
+        livePreview = ""; phase = .idle; level = 0; hud?.hide()
         holdRecording.reset(); recordingFromFn = false
         if let voiceError = error as? VoiceError, case .noSpeech = voiceError { clearEmptyInputNotice(); prewarm(); return }
         notice = error.localizedDescription
@@ -403,7 +473,8 @@ enum RecordingPhase: String {
     }
 
     func shutdown() {
-        work?.cancel(); timer?.invalidate(); warmTask?.cancel(); liveSession?.cancel()
+        warmTask?.cancel()
+        discardCapture()
     }
 
     func copy() {
@@ -417,8 +488,8 @@ enum RecordingPhase: String {
         guard let destination, !destination.isTerminated else {
             notice = "入力先が見つかりません。結果はアプリ内に残しています。"; presentRecordingResult(); return
         }
-        guard AXIsProcessTrusted() else {
-            notice = "自動貼り付けにはアクセシビリティの許可が必要です。結果はアプリ内に残しています。"; presentRecordingResult(); return
+        guard InputAccess.canPaste else {
+            notice = "自動貼り付けには\(InputAccess.pastePermissionName)の許可が必要です。結果はアプリ内に残しています。"; presentRecordingResult(); return
         }
         guard RecordingPresentation.canPaste(startingApplication: destination.processIdentifier, currentApplication: NSWorkspace.shared.frontmostApplication?.processIdentifier) else {
             notice = "入力先が切り替わったため貼り付けませんでした。結果はアプリ内に残しています。"; presentRecordingResult(); return
@@ -427,6 +498,13 @@ enum RecordingPhase: String {
         // a new element for the same field on every query. Requiring the same element as at the
         // start therefore blocked legitimate pastes. The frontmost-app check above is the guard;
         // the focused element is only used, when available, to keep password fields untouched.
+        #if APP_STORE
+        // Sandbox cannot inspect another app's focused AX element. Fail closed whenever
+        // macOS reports secure event input; retain the transcript for manual recovery.
+        guard !IsSecureEventInputEnabled() else {
+            notice = "保護された入力が有効なため貼り付けません。結果はアプリ内に残しています。"; presentRecordingResult(); return
+        }
+        #else
         var subrole: CFTypeRef?
         if let current = Self.focusedElement(in: destination) {
             AXUIElementCopyAttributeValue(current, kAXSubroleAttribute as CFString, &subrole)
@@ -434,6 +512,7 @@ enum RecordingPhase: String {
         guard RecordingPresentation.canPaste(focusedSubrole: subrole as? String) else {
             notice = "パスワード欄には自動で貼り付けません。"; presentRecordingResult(); return
         }
+        #endif
         guard let source = CGEventSource(stateID: .hidSystemState),
               let down = CGEvent(keyboardEventSource: source, virtualKey: 9, keyDown: true),
               let up = CGEvent(keyboardEventSource: source, virtualKey: 9, keyDown: false) else {
@@ -447,9 +526,13 @@ enum RecordingPhase: String {
     }
 
     func requestAccessibility() {
+        #if APP_STORE
+        _ = CGRequestPostEventAccess()
+        #else
         let key = kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String
         _ = AXIsProcessTrustedWithOptions([key: true] as CFDictionary)
         NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility")!)
+        #endif
         refreshInputPermissions()
     }
 
@@ -465,6 +548,7 @@ enum RecordingPhase: String {
         }
     }
 
+    #if !APP_STORE
     private static func focusedElement(in app: NSRunningApplication) -> AXUIElement? {
         guard AXIsProcessTrusted() else { return nil }
         var value: CFTypeRef?
@@ -472,6 +556,7 @@ enum RecordingPhase: String {
         guard result == .success, let value, CFGetTypeID(value) == AXUIElementGetTypeID() else { return nil }
         return (value as! AXUIElement)
     }
+    #endif
 
     func showWindow() {
         if let windowPresenter { windowPresenter(); return }

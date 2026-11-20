@@ -58,6 +58,20 @@ import CoreFoundation
         mustReject("empty dictionary") { _ = try parse("# comment only\n!!HEADER") }
         mustReject("size limit") { _ = try DictionaryImporter.parse(data: Data(repeating: 65, count: DictionaryImporter.maximumBytes + 1), fileName: "large.txt", source: .generic, existing: []) }
         mustReject("entry limit") { _ = try parse((0...DictionaryImporter.maximumEntries).map { "word\($0)" }.joined(separator: "\n"), "large.txt", .aquaWords) }
-        print("PASS: 25 dictionary import format, encoding, merge and validation checks")
+        let transferEntries = [
+            DictionaryEntry(heard: "えーしー", written: "ACME, \"合成\"\n二行目"),
+            DictionaryEntry(heard: "任意の読み", written: "合成の認識ヒント", kind: .vocabulary)
+        ]
+        let transfer = try DictionaryCorrection.exportData(transferEntries)
+        let imported = try DictionaryImporter.parse(data: transfer, fileName: "こえのたね辞書.json", source: .generic, existing: [])
+        precondition(imported.additions.count == 2 && imported.skipped == 0)
+        precondition(imported.additions[0].heard == transferEntries[0].heard && imported.additions[0].written == transferEntries[0].written)
+        precondition(imported.additions[1].isVocabulary && imported.additions[1].written == transferEntries[1].written)
+        let returned = try DictionaryImporter.parse(data: DictionaryCorrection.exportData(imported.additions), fileName: "returned.json", source: .generic, existing: transferEntries)
+        precondition(returned.additions.isEmpty && returned.duplicates == 2, "Round-trip import must not duplicate words or hints")
+        let changed = [DictionaryEntry(heard: "えーしー", written: "既存の表記")]
+        let merged = try DictionaryImporter.parse(data: transfer, fileName: "received.json", source: .generic, existing: changed)
+        precondition(merged.conflicts == 1 && merged.additions.allSatisfy(\.isVocabulary) && changed[0].written == "既存の表記")
+        print("PASS: 28 dictionary import and file round-trip checks")
     }
 }

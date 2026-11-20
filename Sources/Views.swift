@@ -128,6 +128,10 @@ struct MainView: View {
                     Text(model.duration).font(.system(size: 11, design: .monospaced)).padding(.leading, 8)
                     Button("キャンセル") { model.cancel() }.font(.system(size: 10)).buttonStyle(.plain).padding(.leading, 8)
                 }.frame(height: 26).animation(.easeOut(duration: 0.1), value: model.level)
+                if model.playbackMuteFailed {
+                    Label("この出力先では再生音を消せません。", systemImage: "speaker.wave.2")
+                        .font(.system(size: 11)).foregroundStyle(.secondary)
+                }
             } else {
                 HStack(spacing: 8) {
                     Text(model.fnEnabled ? "入力先で長押し" : "クリック、または").foregroundStyle(.secondary)
@@ -205,16 +209,23 @@ struct InputSetupView: View {
             // Input Monitoring is only requested when paste is off or Accessibility alone was not enough.
             let needsAccessibility = model.autoPaste && !model.pasteReady
             if model.autoPaste {
-                statusRow(done: model.pasteReady, title: model.fnEnabled && needsAccessibility ? "Fnキーの検知・自動貼り付け" : "自動貼り付け",
-                          pending: "アクセシビリティの許可が必要", button: "許可する") { model.requestAccessibility() }
+                statusRow(done: model.pasteReady, title: model.fnEnabled && needsAccessibility && !AppDistribution.isAppStore ? "Fnキーの検知・自動貼り付け" : "自動貼り付け",
+                          pending: "\(InputAccess.pastePermissionName)の許可が必要", button: "許可する") { model.requestAccessibility() }
             }
-            if model.fnEnabled && !needsAccessibility {
+            if model.fnEnabled && (!needsAccessibility || AppDistribution.isAppStore) {
                 statusRow(done: model.fnReady, title: "Fnキーの検知", pending: "入力監視の許可が必要",
                           button: "入力監視を設定する") { model.requestFnPermission() }
             }
             if (model.fnEnabled && !model.fnReady) || needsAccessibility {
                 VStack(alignment: .leading, spacing: 6) {
-                    if model.permissionsNeedRedo {
+                    if AppDistribution.isAppStore {
+                        Text("入力監視とイベント送信は別の許可です。各「許可する」ボタンからmacOSの案内に従ってください。許可後に反映されない場合は、アプリを開き直して準備状況を再確認してください。")
+                            .fixedSize(horizontal: false, vertical: true)
+                        HStack {
+                            Button("許可を再申請する") { model.redoPermissions() }
+                            Button("こえのたねを開き直す") { model.relaunch() }
+                        }
+                    } else if model.permissionsNeedRedo {
                         Label("アプリを更新したため、許可のやり直しが必要です", systemImage: "exclamationmark.triangle.fill")
                             .font(.system(size: 12, weight: .semibold)).foregroundStyle(.orange)
                         Text("システム設定では「こえのたね」がオンに見えますが、それは更新前の版への許可で、今の版には効いていません。下のボタンが古い許可を消して、新しく申請します。開いた一覧で「こえのたね」をオンにするだけで完了です。")
@@ -293,6 +304,10 @@ struct AboutView: View {
                         Text("日本語の声を、Macの中でことばに。").font(.system(size: 12)).foregroundStyle(.secondary)
                     }
                 }
+                #if APP_STORE
+                Text("アプリの更新はApp Storeから行います。")
+                    .font(.system(size: 11)).foregroundStyle(.secondary)
+                #else
                 VStack(alignment: .leading, spacing: 10) {
                     HStack {
                         Label("アプリの更新", systemImage: "arrow.triangle.2.circlepath").font(.system(size: 13, weight: .semibold))
@@ -311,6 +326,7 @@ struct AboutView: View {
                     Text("更新する場合は、案内に従ってインストール・再起動してください。辞書と設定は引き継ぎます。")
                         .font(.system(size: 10)).foregroundStyle(.secondary)
                 }.padding(18).frame(maxWidth: .infinity, alignment: .leading).background(.white, in: RoundedRectangle(cornerRadius: 14))
+                #endif
                 VStack(alignment: .leading, spacing: 10) {
                     Label("無料で使える音声入力", systemImage: "leaf").font(.system(size: 13, weight: .semibold)).foregroundStyle(green)
                     Text(publicInfo.info.intro)
@@ -379,8 +395,12 @@ struct UpdateMenuItem: View {
         self.model = model; self.updater = updater; self.publicInfo = model.publicInfo
     }
     var body: some View {
+        #if APP_STORE
+        EmptyView()
+        #else
         Button(publicInfo.updateAvailable ? "新しいバージョンに更新…" : "更新を確認…") { updater.checkForUpdates() }
             .disabled(model.phase != .idle || !updater.canCheckForUpdates)
+        #endif
     }
 }
 
@@ -538,13 +558,14 @@ struct SettingsView: View {
                 }
                 card("予備のショートカット", icon: "keyboard") {
                     Picker("音声入力の開始 / 終了", selection: $model.shortcut) {
-                        Text("⌃ ⌥ Space").tag(0); Text("⌘ ⇧ Space").tag(1); Text("⌃ ⇧ Space").tag(2)
+                        Text("⌃ ⌥ Space").tag(0); Text("⌘ ⇧ Space").tag(1); Text("⌃ ⇧ Space").tag(2); Text("⌃ ⌘（2キーだけ）").tag(3)
                     }.disabled(model.busy)
+                    if model.shortcut == 3 { Text("ControlとCommandだけを同時に押し、両方離すと開始／終了します。ほかのキーを組み合わせると反応しません。\(InputAccess.listenPermissionName)の許可が必要です。").font(.system(size: 10)).foregroundStyle(.secondary) }
                     if !model.hotkeyStatus.isEmpty { Text(model.hotkeyStatus).font(.system(size: 10)).foregroundStyle(.red) }
                     Toggle("ショートカット音声入力後、元のアプリに自動で貼り付ける", isOn: $model.autoPaste).font(.system(size: 12)).disabled(model.busy)
                     Text("クリップボードに結果を入れ、⌘Vを送ります。送信キーは押しません。アプリの音声入力ボタンでは結果を表示します。")
                         .font(.system(size: 10)).foregroundStyle(.secondary)
-                    Button("アクセシビリティの許可を設定") { model.requestAccessibility() }
+                    Button("\(InputAccess.pastePermissionName)の許可を設定") { model.requestAccessibility() }
                 }
                 card("データについて", icon: "lock.shield") {
                     Text("マイク音声はメモリ上で認識し、音声ファイルは保存しません。入力履歴は直近5件をこのMacに保存し、履歴画面で保存のオン・オフと削除ができます。統計は文字数・回数・所要時間・開始時のアプリ名をこのMacに保存します。単語辞書と設定もこのMacに保存します。")

@@ -1,5 +1,13 @@
 import AppKit
 import Combine
+#if APP_STORE
+@MainActor final class AppUpdateController: ObservableObject {
+    @Published private(set) var canCheckForUpdates = false
+    @Published private(set) var sessionInProgress = false
+    func start() { }
+    func checkForUpdates() { }
+}
+#else
 import Sparkle
 
 @MainActor final class AppUpdateController: ObservableObject {
@@ -24,3 +32,4 @@ import Sparkle
         controller.checkForUpdates(nil)
     }
 }
+#endif

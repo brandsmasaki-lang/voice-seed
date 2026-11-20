@@ -26,7 +26,12 @@ else
         echo 'Use an explicit Developer ID Application identity, or leave CODESIGN_IDENTITY unset for local development.' >&2
         exit 1
     fi
-    codesign --force --deep --sign "$identity" --options runtime --timestamp "$bundle/Contents/Frameworks/Sparkle.framework"
+    framework="$bundle/Contents/Frameworks/Sparkle.framework"
+    for component in Autoupdate Updater.app XPCServices/Downloader.xpc XPCServices/Installer.xpc; do
+        codesign --force --sign "$identity" --options runtime --timestamp \
+            --preserve-metadata=entitlements "$framework/Versions/B/$component"
+    done
+    codesign --force --sign "$identity" --options runtime --timestamp "$framework"
     codesign --force --sign "$identity" --options runtime --timestamp \
         --entitlements Resources/Release.entitlements --identifier jp.ainotane.voice-seed "$bundle"
 fi

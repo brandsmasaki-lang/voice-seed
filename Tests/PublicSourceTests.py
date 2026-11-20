@@ -32,7 +32,8 @@ class PublicSourceTests(unittest.TestCase):
 
     def test_private_artifacts_are_excluded(self):
         sentinel = "synthetic-private-" + uuid.uuid4().hex
-        for name in ("qa/recording.wav", ".git/config", "dist/app.zip", ".build/preferences.plist", "personal-dictionary.json"):
+        for name in ("qa/recording.wav", ".git/config", "dist/app.zip", ".build/preferences.plist", "personal-dictionary.json",
+                     ".ios-signing.local.xcconfig", "iOS/VoiceSeed.xcodeproj/project.xcworkspace/xcuserdata/fixture.xcuserstate"):
             path = self.root / name
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_text(sentinel)

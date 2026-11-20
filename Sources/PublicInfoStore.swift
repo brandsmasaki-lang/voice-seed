@@ -11,20 +11,25 @@ import Combine
     private var timer: Timer?
 
     init() {
+        #if !APP_STORE
         if let data = UserDefaults.standard.data(forKey: cacheKey), let value = try? PublicAppInfo.decode(data) { info = value }
+        #endif
     }
 
     var updateAvailable: Bool { info.hasUpdate(installedBuild: Int(AppMetadata.build) ?? 0) }
 
     func start() {
+        #if !APP_STORE
         guard timer == nil else { return }
         Task { await refresh() }
         timer = Timer.scheduledTimer(withTimeInterval: 6 * 60 * 60, repeats: true) { [weak self] _ in
             Task { @MainActor in await self?.refresh() }
         }
+        #endif
     }
 
     func refresh(force: Bool = false) async {
+        #if !APP_STORE
         guard !refreshing, force || Date().timeIntervalSince(lastAttempt) >= 300 else { return }
         refreshing = true; lastAttempt = Date()
         defer { refreshing = false }
@@ -53,5 +58,6 @@ import Combine
         } catch {
             status = "案内を取得できないため、保存済みの内容を表示しています。"
         }
+        #endif
     }
 }

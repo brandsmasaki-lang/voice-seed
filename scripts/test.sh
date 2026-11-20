@@ -12,6 +12,9 @@ swiftc -target arm64-apple-macosx26.0 -module-cache-path "$PWD/.build/module-cac
     -parse-as-library Sources/FnKeyState.swift Tests/FnKeyStateTests.swift -o .build/FnKeyStateTests
 .build/FnKeyStateTests
 swiftc -target arm64-apple-macosx26.0 -module-cache-path "$PWD/.build/module-cache" \
+    -parse-as-library Sources/MicrophoneTail.swift Tests/MicrophoneTailTests.swift -o .build/MicrophoneTailTests
+.build/MicrophoneTailTests
+swiftc -target arm64-apple-macosx26.0 -module-cache-path "$PWD/.build/module-cache" \
     -parse-as-library Sources/FnStartPolicy.swift Tests/FnStartPolicyTests.swift -o .build/FnStartPolicyTests
 .build/FnStartPolicyTests
 swiftc -target arm64-apple-macosx26.0 -module-cache-path "$PWD/.build/module-cache" \
@@ -20,6 +23,15 @@ swiftc -target arm64-apple-macosx26.0 -module-cache-path "$PWD/.build/module-cac
 swiftc -target arm64-apple-macosx26.0 -module-cache-path "$PWD/.build/module-cache" \
     -parse-as-library Sources/TranscriptBuffer.swift Tests/TranscriptBufferTests.swift -o .build/TranscriptBufferTests
 .build/TranscriptBufferTests
+swiftc -target arm64-apple-macosx26.0 -module-cache-path "$PWD/.build/module-cache" \
+    -parse-as-library Sources/ModifierShortcutState.swift Tests/ModifierShortcutStateTests.swift -o .build/ModifierShortcutStateTests
+.build/ModifierShortcutStateTests
+swiftc -target arm64-apple-macosx26.0 -module-cache-path "$PWD/.build/module-cache" \
+    -parse-as-library Sources/JapaneseSentenceEnding.swift Tests/JapaneseSentenceEndingTests.swift -o .build/JapaneseSentenceEndingTests
+.build/JapaneseSentenceEndingTests
+swiftc -target arm64-apple-macosx26.0 -module-cache-path "$PWD/.build/module-cache" \
+    -parse-as-library Sources/DeveloperTermCorrection.swift Tests/DeveloperTermCorrectionTests.swift -o .build/DeveloperTermCorrectionTests
+.build/DeveloperTermCorrectionTests
 plutil -lint Resources/Info.plist
 python3 Tests/PublicSourceTests.py
 swiftc -target arm64-apple-macosx26.0 -module-cache-path "$PWD/.build/module-cache" \

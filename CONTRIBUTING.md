@@ -7,6 +7,12 @@
 3. 変更した機能の実操作と、既存テストを確認します。音声・辞書の例は架空のデータにしてください。
 4. Pull Requestに変更後の動作と確認した環境を記載します。
 
-通常のCIはマイクを使いません。音声認識の精度、macOSの許可、物理Fnキー、他アプリへの貼り付けは実機確認が必要です。詳細は `docs/RELEASING.md` を参照してください。
+普段の開発はMac Studioで必要なテスト・ビルド・実操作確認を行い、コミット・PushでGitHubへ保存します。PushやPull RequestではGitHub Actionsを自動実行しません。
+
+GitHub側での検証が必要な場合だけ、Actionsで「Build and test」または「iPhone app and keyboard」を選び、「Run workflow」から手動実行します。GitHub側の実行時間枠を節約するため、通常のPushの後に確認目的で手動起動しないでください。
+
+iPhone/iPadの変更は、`python3 iOS/Scripts/generate-project.py --check`、`swift test --package-path iOS`、対象SDKのビルドと必要な実機確認をMac Studioで行います。
+
+CIはマイクを使いません。音声認識の精度、macOSの許可、物理Fnキー、他アプリへの貼り付けは実機確認が必要です。詳細は `docs/RELEASING.md` を参照してください。
 
 個人辞書・実録音・認識履歴・署名証明書・認証情報をコミットしないでください。アドホック署名の開発版は、再ビルド時にmacOSの許可再登録が必要になる場合があります。

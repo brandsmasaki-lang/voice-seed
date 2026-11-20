@@ -16,7 +16,7 @@ import ApplicationServices
     @discardableResult func start() -> Bool {
         if let tap { return CGEvent.tapIsEnabled(tap: tap) }
         // Do not trigger an OS permission prompt on launch; the setup button does that.
-        guard CGPreflightListenEventAccess() || AXIsProcessTrusted() else { return false }
+        guard InputAccess.canListen else { return false }
         let mask = (CGEventMask(1) << CGEventType.flagsChanged.rawValue) | (CGEventMask(1) << CGEventType.keyDown.rawValue)
         guard let tap = CGEvent.tapCreate(tap: .cgSessionEventTap, place: .headInsertEventTap,
                                          options: .listenOnly, eventsOfInterest: mask, callback: { _, type, event, context in
@@ -65,6 +65,53 @@ import ApplicationServices
 }
 
 @MainActor final class GlobalHotkey {
+    private var modifierTap: CFMachPort?
+    private var modifierSource: CFRunLoopSource?
+    private var modifierState = ModifierShortcutState()
+
+    private func startModifierShortcut() -> Bool {
+        guard InputAccess.canListen else { return false }
+        let mask = (CGEventMask(1) << CGEventType.flagsChanged.rawValue) | (CGEventMask(1) << CGEventType.keyDown.rawValue)
+        guard let tap = CGEvent.tapCreate(tap: .cgSessionEventTap, place: .headInsertEventTap,
+            options: .listenOnly, eventsOfInterest: mask, callback: { _, type, event, context in
+                guard let context else { return Unmanaged.passUnretained(event) }
+                let hotkey = Unmanaged<GlobalHotkey>.fromOpaque(context).takeUnretainedValue()
+                MainActor.assumeIsolated { hotkey.receiveModifier(type: type, event: event) }
+                return Unmanaged.passUnretained(event)
+            }, userInfo: Unmanaged.passUnretained(self).toOpaque()),
+            let source = CFMachPortCreateRunLoopSource(kCFAllocatorDefault, tap, 0) else { return false }
+        modifierTap = tap; modifierSource = source
+        CFRunLoopAddSource(CFRunLoopGetMain(), source, .commonModes)
+        CGEvent.tapEnable(tap: tap, enable: true)
+        return true
+    }
+
+    private func receiveModifier(type: CGEventType, event: CGEvent) {
+        if type == .tapDisabledByTimeout || type == .tapDisabledByUserInput {
+            modifierState.reset()
+            if let modifierTap { CGEvent.tapEnable(tap: modifierTap, enable: true) }
+            return
+        }
+        guard type == .flagsChanged || type == .keyDown else { return }
+        let flags = event.flags
+        if modifierState.update(control: flags.contains(.maskControl), command: flags.contains(.maskCommand),
+            otherModifiers: !flags.intersection([.maskShift, .maskAlternate, .maskSecondaryFn]).isEmpty,
+            keyDown: type == .keyDown) { onPress?() }
+    }
+
+    private func stopModifierShortcut() {
+        if let modifierSource { CFRunLoopRemoveSource(CFRunLoopGetMain(), modifierSource, .commonModes) }
+        if let modifierTap { CFMachPortInvalidate(modifierTap) }
+        modifierTap = nil; modifierSource = nil; modifierState.reset()
+    }
+
+    func refreshModifierShortcut(choice: Int) -> Bool {
+        guard choice == 3 else { return true }
+        if let modifierTap, CGEvent.tapIsEnabled(tap: modifierTap) { return true }
+        stopModifierShortcut()
+        return startModifierShortcut()
+    }
+
     private var reference: EventHotKeyRef?
     private var handler: EventHandlerRef?
     var onPress: (() -> Void)?
@@ -80,7 +127,9 @@ import ApplicationServices
     }
 
     func register(choice: Int) -> Bool {
+        stopModifierShortcut()
         if let reference { UnregisterEventHotKey(reference); self.reference = nil }
+        if choice == 3 { return startModifierShortcut() }
         let modifiers = [controlKey | optionKey, cmdKey | shiftKey, controlKey | shiftKey]
         let id = EventHotKeyID(signature: 0x4B4F454E, id: 1)
         return RegisterEventHotKey(UInt32(kVK_Space), UInt32(modifiers[min(max(choice, 0), 2)]), id,
@@ -88,6 +137,7 @@ import ApplicationServices
     }
 
     func unregister() {
+        stopModifierShortcut()
         if let reference { UnregisterEventHotKey(reference) }
         if let handler { RemoveEventHandler(handler) }
         reference = nil; handler = nil
@@ -149,7 +199,7 @@ struct HUDView: View {
                     else { ProgressView().controlSize(.small) }
                     VStack(alignment: .leading, spacing: 3) {
                         Text(model.phase == .recording ? "聞き取り中  \(model.duration)" : model.phase.title).font(.system(size: 13, weight: .semibold))
-                        Text(model.phase == .recording ? (model.recordingFromFn ? "Fn を離すと確定します" : "\(model.shortcutLabel) で終了") : "Macの中で処理しています").font(.system(size: 10)).foregroundStyle(.secondary)
+                        Text(model.phase == .recording ? (model.playbackMuteFailed ? "この出力先では再生音を消せません" : model.recordingFromFn ? "Fn を離すと確定します" : "\(model.shortcutLabel) で終了") : "Macの中で処理しています").font(.system(size: 10)).foregroundStyle(.secondary)
                     }
                     Spacer()
                     if model.phase == .recording {

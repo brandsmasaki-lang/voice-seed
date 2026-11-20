@@ -1,29 +1,120 @@
 import AVFoundation
 import Speech
 import CoreMedia
+import Synchronization
 
-/// All conversion runs on one queue. The render callback's buffer is copied before return.
+private final class CaptureBoundary: Sendable {
+    let cutoff = Mutex<UInt64?>(nil)
+}
+
+/// Capture starts as soon as the microphone is requested. The bounded stream holds
+/// the first words while the speech model is preparing and drains in capture order.
+@MainActor final class MicrophoneCapture {
+    let buffers: AsyncThrowingStream<AVAudioPCMBuffer, Error>
+    private let continuation: AsyncThrowingStream<AVAudioPCMBuffer, Error>.Continuation
+    private let engine = AVAudioEngine()
+    private var tapped = false
+    private var configurationObserver: NSObjectProtocol?
+    private let boundary = CaptureBoundary()
+    private let tailDelivered: AsyncStream<Void>
+    private let tailSignal: AsyncStream<Void>.Continuation
+
+    init() {
+        (buffers, continuation) = AsyncThrowingStream.makeStream(bufferingPolicy: .bufferingOldest(128))
+        (tailDelivered, tailSignal) = AsyncStream.makeStream()
+    }
+
+    func start(onFailure: @escaping @MainActor @Sendable (Error) -> Void) throws {
+        let input = engine.inputNode
+        let hardware = input.inputFormat(forBus: 0)
+        let format = input.outputFormat(forBus: 0)
+        guard hardware.channelCount > 0, hardware.sampleRate > 0, format.channelCount > 0, format.sampleRate > 0 else {
+            throw VoiceError.message("マイクの入力デバイスを確認してください。")
+        }
+        input.installTap(onBus: 0, bufferSize: 1024, format: format) { [continuation, boundary, tailSignal] buffer, when in
+            guard buffer.frameLength > 0 else { return }
+            var frames = buffer.frameLength
+            var reachedEnd = false
+            if let deadline = boundary.cutoff.withLock({ $0 }), when.isHostTimeValid {
+                let earliest = min(deadline, when.hostTime)
+                let difference = AVAudioTime.seconds(forHostTime: max(deadline, when.hostTime) - earliest)
+                let slice = MicrophoneTail.slice(frames: Int(frames), sampleRate: buffer.format.sampleRate,
+                    secondsBeforeCutoff: deadline >= when.hostTime ? difference : -difference)
+                frames = AVAudioFrameCount(slice.count)
+                reachedEnd = slice.reachedEnd
+            }
+            defer { if reachedEnd { tailSignal.finish() } }
+            guard frames > 0 else { return }
+            guard let copy = AVAudioPCMBuffer(pcmFormat: buffer.format, frameCapacity: frames) else {
+                continuation.finish(throwing: VoiceError.message("マイクの音声を取り込めませんでした。"))
+                tailSignal.finish()
+                return
+            }
+            copy.frameLength = frames
+            let inputs = UnsafeMutableAudioBufferListPointer(UnsafeMutablePointer(mutating: buffer.audioBufferList))
+            let outputs = UnsafeMutableAudioBufferListPointer(copy.mutableAudioBufferList)
+            for (input, output) in zip(inputs, outputs) {
+                if let src = input.mData, let dst = output.mData { memcpy(dst, src, Int(min(input.mDataByteSize, output.mDataByteSize))) }
+            }
+            if case .dropped = continuation.yield(copy) {
+                continuation.finish(throwing: VoiceError.message("音声認識の準備に時間がかかり、録音を続けられませんでした。"))
+                tailSignal.finish()
+            }
+        }
+        tapped = true
+        configurationObserver = NotificationCenter.default.addObserver(forName: .AVAudioEngineConfigurationChange, object: engine, queue: .main) { [weak self] _ in
+            Task { @MainActor in
+                guard self?.tapped == true else { return }
+                onFailure(VoiceError.message("マイクの接続または音声設定が変更されました。もう一度音声入力してください。"))
+            }
+        }
+        engine.prepare()
+        try engine.start()
+    }
+
+    func markRelease(at hostTime: UInt64) {
+        boundary.cutoff.withLock { $0 = hostTime + AVAudioTime.hostTime(forSeconds: MicrophoneTail.graceSeconds) }
+    }
+
+    func waitForTail() async {
+        let timeout = Task { [tailSignal] in
+            do { try await Task.sleep(for: .milliseconds(520)) }
+            catch { return }
+            tailSignal.finish()
+        }
+        defer { timeout.cancel() }
+        for await _ in tailDelivered { }
+    }
+
+    func end(cancelled: Bool = false) {
+        tailSignal.finish()
+        if let configurationObserver {
+            NotificationCenter.default.removeObserver(configurationObserver)
+            self.configurationObserver = nil
+        }
+        if tapped {
+            tapped = false
+            engine.stop()
+            engine.inputNode.removeTap(onBus: 0)
+        }
+        continuation.finish(throwing: cancelled ? CancellationError() : nil)
+    }
+}
+
+/// All conversion runs on one queue. Queued buffers are owned by the caller.
 private final class AudioStreamPump: @unchecked Sendable {
     private let queue = DispatchQueue(label: "jp.ainotane.voice-seed.audio", qos: .userInitiated)
     private let continuation: AsyncThrowingStream<AnalyzerInput, Error>.Continuation
     private let target: AVAudioFormat
     private var converter: AVAudioConverter?
     private var closed = false
-    private var conversionError: Error?
     var onLevel: (@Sendable (Double) -> Void)?
 
     init(target: AVAudioFormat, continuation: AsyncThrowingStream<AnalyzerInput, Error>.Continuation) {
         self.target = target; self.continuation = continuation
     }
 
-    func enqueue(_ source: AVAudioPCMBuffer) {
-        guard let copy = AVAudioPCMBuffer(pcmFormat: source.format, frameCapacity: source.frameLength) else { return }
-        copy.frameLength = source.frameLength
-        let inputs = UnsafeMutableAudioBufferListPointer(UnsafeMutablePointer(mutating: source.audioBufferList))
-        let outputs = UnsafeMutableAudioBufferListPointer(copy.mutableAudioBufferList)
-        for (input, output) in zip(inputs, outputs) {
-            if let src = input.mData, let dst = output.mData { memcpy(dst, src, Int(min(input.mDataByteSize, output.mDataByteSize))) }
-        }
+    func enqueue(_ copy: AVAudioPCMBuffer) {
         queue.async { [self] in
             guard !closed else { return }
             do {
@@ -51,7 +142,7 @@ private final class AudioStreamPump: @unchecked Sendable {
                 guard status != .error else { throw VoiceError.message("音声変換でエラーが発生しました。") }
                 if output.frameLength > 0 { try yield(output) }
             } catch {
-                conversionError = error; closed = true; continuation.finish(throwing: error)
+                closed = true; continuation.finish(throwing: error)
             }
         }
     }
@@ -80,40 +171,34 @@ private final class AudioStreamPump: @unchecked Sendable {
                     }
                 }
                 continuation.finish()
-            } catch { conversionError = error; continuation.finish(throwing: error) }
+            } catch { continuation.finish(throwing: error) }
         }
     }
 }
 
 @MainActor final class StreamingSpeechSession {
-    private let transcriber: SpeechTranscriber
+    private let transcriber: DictationTranscriber
     private let analyzer: SpeechAnalyzer
     private let format: AVAudioFormat
-    private var engine: AVAudioEngine?
-    private var tapped = false
     private var pump: AudioStreamPump?
     private var reader: Task<String, Error>?
-    private var interruptedObserver: NSObjectProtocol?
+    private var feeder: Task<Void, Error>?
     private var started = false
     private(set) var firstPreviewAt: Date?
     var onPreview: ((String) -> Void)?
     var onLevel: ((Double) -> Void)?
     var onFailure: ((Error) -> Void)?
 
-    private init(transcriber: SpeechTranscriber, analyzer: SpeechAnalyzer, format: AVAudioFormat) {
+    private init(transcriber: DictationTranscriber, analyzer: SpeechAnalyzer, format: AVAudioFormat) {
         self.transcriber = transcriber; self.analyzer = analyzer; self.format = format
     }
 
     static func prepare(vocabulary: [String]) async throws -> StreamingSpeechSession {
-        guard SpeechTranscriber.isAvailable,
-              let locale = await SpeechTranscriber.supportedLocale(equivalentTo: Locale(identifier: "ja-JP")) else {
-            throw VoiceError.message("日本語の端末内音声認識を利用できません。")
-        }
-        let transcriber = SpeechTranscriber(locale: locale, preset: .progressiveTranscription)
+        let transcriber = try await SpeechService.module(progressive: true)
         guard await AssetInventory.status(forModules: [transcriber]) == .installed else { throw VoiceError.message("日本語モデルを準備してください。") }
         let analyzer = SpeechAnalyzer(modules: [transcriber], options: .init(priority: .userInitiated, modelRetention: .processLifetime))
         let context = AnalysisContext()
-        context.contextualStrings[.general] = Array(Set(vocabulary.filter { !$0.isEmpty }))
+        context.contextualStrings[.general] = Array(Set(vocabulary.filter { !$0.isEmpty } + ["GitHub"]))
         try await analyzer.setContext(context)
         guard let format = await SpeechAnalyzer.bestAvailableAudioFormat(compatibleWith: [transcriber]) else { throw VoiceError.message("認識用の音声形式を取得できません。") }
         try await analyzer.prepareToAnalyze(in: format)
@@ -129,7 +214,7 @@ private final class AudioStreamPump: @unchecked Sendable {
         pump.onLevel = { [weak self] level in Task { @MainActor in self?.onLevel?(level) } }
         self.pump = pump
         reader = Task { [weak self, transcriber] in
-            var transcript = TranscriptBuffer()
+            var transcript = TranscriptBuffer(paragraphPause: 1.2)
             do {
                 for try await result in transcriber.results {
                     transcript.update(start: result.range.start.seconds, end: result.range.end.seconds,
@@ -139,7 +224,7 @@ private final class AudioStreamPump: @unchecked Sendable {
                         self?.onPreview?(transcript.preview)
                     }
                 }
-                return transcript.finalText
+                return JapaneseSentenceEnding.complete(DeveloperTermCorrection.apply(transcript.finalText))
             } catch {
                 if !(error is CancellationError) { self?.onFailure?(error) }
                 throw error
@@ -149,38 +234,27 @@ private final class AudioStreamPump: @unchecked Sendable {
         try Task.checkCancellation()
     }
 
-    func startMicrophone() async throws {
-        let engine = AVAudioEngine()
-        let input = engine.inputNode
-        let inputFormat = input.outputFormat(forBus: 0)
-        guard inputFormat.channelCount > 0, inputFormat.sampleRate > 0 else { throw VoiceError.message("マイクの入力デバイスを確認してください。") }
-        self.engine = engine
+    func start(buffers: AsyncThrowingStream<AVAudioPCMBuffer, Error>) async throws {
         try await startStream()
-        try Task.checkCancellation()
         guard let pump else { throw VoiceError.message("音声ストリームを開始できません。") }
-        input.installTap(onBus: 0, bufferSize: 2048, format: inputFormat) { [pump] buffer, _ in pump.enqueue(buffer) }
-        tapped = true
-        interruptedObserver = NotificationCenter.default.addObserver(forName: .AVAudioEngineConfigurationChange, object: engine, queue: .main) { [weak self] _ in
-            Task { @MainActor in self?.onFailure?(VoiceError.message("マイクの接続または音声設定が変更されました。もう一度音声入力してください。")) }
+        feeder = Task { [weak self] in
+            do {
+                for try await buffer in buffers {
+                    try Task.checkCancellation()
+                    pump.enqueue(buffer)
+                }
+                pump.finish()
+            } catch {
+                pump.finish(cancelled: true)
+                if !(error is CancellationError) { self?.onFailure?(error) }
+                throw error
+            }
         }
-        engine.prepare()
-        try engine.start()
-    }
-
-    private func stopMicrophone() {
-        if let interruptedObserver { NotificationCenter.default.removeObserver(interruptedObserver); self.interruptedObserver = nil }
-        engine?.stop()
-        if tapped { engine?.inputNode.removeTap(onBus: 0); tapped = false }
-        engine = nil
-    }
-
-    func endAudio() {
-        stopMicrophone()
-        pump?.finish()
     }
 
     func finish() async throws -> String {
         do {
+            try await feeder?.value
             try await analyzer.finalizeAndFinishThroughEndOfInput()
             let text = try await reader?.value ?? ""
             guard !text.isEmpty else { throw VoiceError.noSpeech }
@@ -194,7 +268,7 @@ private final class AudioStreamPump: @unchecked Sendable {
 
     func cancel() {
         onFailure = nil; onPreview = nil; onLevel = nil
-        stopMicrophone(); pump?.finish(cancelled: true); reader?.cancel()
+        feeder?.cancel(); pump?.finish(cancelled: true); reader?.cancel()
         Task { await analyzer.cancelAndFinishNow() }
     }
 
@@ -219,7 +293,7 @@ private final class AudioStreamPump: @unchecked Sendable {
                 if remaining > 0 { try await Task.sleep(for: .seconds(remaining)) }
             }
             let released = Date()
-            session.endAudio()
+            session.pump?.finish()
             let text = try await session.finish()
             return ["preparationSeconds": prepared.timeIntervalSince(start),
                     "audioSeconds": Double(audio.length) / audio.processingFormat.sampleRate,

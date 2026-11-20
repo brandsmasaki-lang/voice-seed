@@ -28,13 +28,15 @@ func glyph(in rect: CGRect, color: NSColor) {
     cg.restoreGState()
 }
 
-func icon(_ variant: Int) -> NSImage {
+func icon(_ variant: Int, square: Bool = false) -> NSImage {
     let image = NSImage(size: NSSize(width: 1024, height: 1024))
     image.lockFocus()
-    let background = NSBezierPath(roundedRect: NSRect(x: 64, y: 64, width: 896, height: 896), xRadius: 196, yRadius: 196)
+    let background = square
+        ? NSBezierPath(rect: NSRect(x: 0, y: 0, width: 1024, height: 1024))
+        : NSBezierPath(roundedRect: NSRect(x: 64, y: 64, width: 896, height: 896), xRadius: 196, yRadius: 196)
     NSGradient(starting: NSColor(srgbRed: 0.17, green: 0.40, blue: 0.31, alpha: 1), ending: emerald)!.draw(in: background, angle: -65)
     NSColor.white.withAlphaComponent(0.08).setStroke()
-    background.lineWidth = 3; background.stroke()
+    if !square { background.lineWidth = 3; background.stroke() }
     if variant == 0 {
         glyph(in: CGRect(x: 158, y: 208, width: 620, height: 628), color: .white)
         for radius in [64.0, 114.0] {
@@ -57,7 +59,19 @@ func icon(_ variant: Int) -> NSImage {
     return image
 }
 
-func png(_ image: NSImage, pixels: Int, to url: URL) throws {
+func png(_ image: NSImage, pixels: Int, to url: URL, opaque: Bool = false) throws {
+    if opaque {
+        let context = CGContext(data: nil, width: pixels, height: pixels, bitsPerComponent: 8,
+                                bytesPerRow: pixels * 4, space: CGColorSpaceCreateDeviceRGB(),
+                                bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue)!
+        NSGraphicsContext.saveGraphicsState()
+        NSGraphicsContext.current = NSGraphicsContext(cgContext: context, flipped: false)
+        image.draw(in: NSRect(x: 0, y: 0, width: pixels, height: pixels))
+        NSGraphicsContext.restoreGraphicsState()
+        let bitmap = NSBitmapImageRep(cgImage: context.makeImage()!)
+        try bitmap.representation(using: .png, properties: [:])!.write(to: url)
+        return
+    }
     let bitmap = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: pixels, pixelsHigh: pixels, bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true, isPlanar: false, colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0)!
     bitmap.size = NSSize(width: pixels, height: pixels)
     NSGraphicsContext.saveGraphicsState()
@@ -68,8 +82,15 @@ func png(_ image: NSImage, pixels: Int, to url: URL) throws {
     try bitmap.representation(using: .png, properties: [:])!.write(to: url)
 }
 
+// iOS supplies its own corner mask. App Store icons must be opaque RGB images.
+if CommandLine.arguments.contains("--ios-store-icon") {
+    try png(icon(0, square: true), pixels: 1024,
+            to: root.appendingPathComponent("iOS/Assets.xcassets/AppIcon.appiconset/AppIcon.png"), opaque: true)
+    exit(0)
+}
+
 let names = ["声と音波", "声と録音点", "声と吹き出し"]
-let images = (0..<3).map(icon)
+let images = (0..<3).map { icon($0) }
 for (i, image) in images.enumerated() { try png(image, pixels: 1024, to: concepts.appendingPathComponent("\(i + 1)-\(names[i]).png")) }
 try png(images[0], pixels: 1024, to: resources.appendingPathComponent("AppIcon1024.png"))
 for size in [16, 32, 128, 256, 512] {

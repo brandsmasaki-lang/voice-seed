@@ -1,4 +1,5 @@
 name: Build and test
+# Run explicitly from Actions; routine development is checked on Mac Studio.
 on:
   workflow_dispatch:
 permissions:
@@ -22,4 +23,4 @@ jobs:
         run: bash scripts/build.sh
       - name: Check clean source export
         run: python3 scripts/export-source.py
-      # No certificates, notarization credentials or ad-hoc-signed public downloads in PR CI.
+      # No certificates, notarization credentials or ad-hoc-signed public downloads in this workflow.

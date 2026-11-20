@@ -1,4 +1,5 @@
 import Foundation
+import FoundationModels
 
 @main struct AppStartupIntegrationTests {
     @MainActor static func main() async {
@@ -17,6 +18,23 @@ import Foundation
         defer { model.shutdown() }
         var checks = 0
         func check(_ value: Bool, _ message: String) { precondition(value, message); checks += 1 }
+        let draft = "明日は15時に3名で伺います。"
+        do {
+            let refused = try await SpeechService.refine(draft, using: { _ in
+                throw LanguageModelSession.GenerationError.guardrailViolation(.init(debugDescription: "Synthetic refusal"))
+            })
+            check(refused == draft, "A model guardrail preserves the input and does not block automatic paste")
+            let failed = try await SpeechService.refine(draft, using: { _ in throw VoiceError.message("Synthetic failure") })
+            check(failed == draft, "Optional formatting failure preserves the input")
+            let altered = try await SpeechService.refine(draft, using: { _ in "明日は16時に3名で伺います。" })
+            check(altered == draft, "Rejected formatting preserves numbers")
+            let formatted = try await SpeechService.refine(draft, using: { _ in "明日は15時に、3名で伺います。" })
+            check(formatted == "明日は15時に、3名で伺います。", "Valid formatting is used")
+            do {
+                _ = try await SpeechService.refine(draft, using: { _ in throw CancellationError() })
+                check(false, "Cancellation must propagate")
+            } catch is CancellationError { check(true, "Cancellation propagates") }
+        } catch { preconditionFailure("Unexpected refinement failure: \(error)") }
         await model.refresh()
         check(!model.modelReady && model.modelStatus == missing.status, "Fresh installation exposes the actual missing model")
         model.fnPressed()

@@ -14,11 +14,19 @@
 4. `python3 scripts/export-source.py` で `dist/voice-seed-バージョン-source.zip` を作成します。
 5. ZIPの全ファイルと `SOURCE_MANIFEST.json` を確認します。公開内容は `scripts/public_source.py` の明示的な一覧に限ります。個人の設定・辞書・音声・開発用qa・既存のGit履歴は含みません。
 6. 初回公開は、このZIPを新しい作業フォルダへ展開して新しいGit履歴を作ります。開発用履歴をそのままpushしないでください。以後の更新は公開リポジトリの既存履歴を維持します。
-7. GitHub Actionsの成功を確認します。CIは `macos-26` のarm64ランナーで、純粋ロジックのテスト・ビルド・ソース書き出しを実施します。マイク・Fn・他アプリへの入力は実機検証です。
+7. Mac Studio上でテストとビルドの成功を確認します。GitHub Actionsは必要な場合だけ手動実行します。通常のコミット・Push後に起動しません。マイク・Fn・他アプリへの入力は実機検証です。
 
 CIのチェックは公開用ファイル一覧・一部の偶発的な認証情報・ローカルパスを確認しますが、秘密情報の不在を保証するものではありません。公開前の内容確認は必須です。
 
 ## 現在のアプリ配布
+
+App Store向けには、iPhone・iPad共通の`iOS/VoiceSeed.xcodeproj`と、ネイティブMac版の`macOS/VoiceSeedStore.xcodeproj`を用意しています。両方とも法人チームNRX77TLPW7の、同じApp Store Connect登録（Apple ID: 6835725144）にアップロードします。詳細は`macOS/README.md`と`iOS/README.md`を参照してください。
+
+Macのストア用ターゲットはSandboxを使用し、`APP_STORE`条件でSparkle・自己インストール・Accessibility APIの処理を外します。従来の直接配布版のビルド・署名・公証経路とは分けて確認します。ストア版の入力監視・イベント送信による操作は実機で別途確認が必要です。
+
+App Storeへのアップロード成功やTestFlightの「提出準備完了」は、公開審査への提出・承認・一般公開とは区別して記録します。公開審査にはプラットフォーム別の画像、説明、候補ビルド、連絡先、プライバシー回答、配信設定をそろえます。Appleの画面に法的同意が出る場合は、所有者の操作を待ちます。
+
+Mac版は「このバージョンを手動でリリースする」を選んで審査に提出します。承認後の公開操作は、ユーザーがApp Store Connectで行います。
 
 `bash scripts/build.sh` の後に `bash scripts/package-app.sh` を実行します。続いて `bash scripts/package-dmg.sh` を実行すると、アプリとアプリケーションへの移動先を並べたDMGを作ります。ZIPにはアプリ本体だけを入れ、初回起動・Fn許可の説明はLPとdocs/INSTALL.mdで案内します。`docs/INSTALL.md` はApple公式のアプリ単位の許可手順を説明し、システム全体のセキュリティ無効化は案内しません。通常のGitHub CIでのビルド成功と、別のMacでの実操作検証は分けて記録してください。
 
@@ -34,16 +42,16 @@ export NOTARY_PROFILE='your-existing-keychain-profile'
 bash scripts/release.sh
 ```
 
-このスクリプトは署名用の公開識別名と、設定済みのキーチェーンプロファイル名を使います。パスワードを引数へ書く必要はありません。アプリだけをAppleへ公証提出します。個人の辞書・設定・録音は含めません。
+このスクリプトは署名用の公開識別名と、設定済みのキーチェーンプロファイル名を使います。パスワードを引数へ書く必要はありません。アプリとDMGをそれぞれAppleへ公証提出します。個人の辞書・設定・録音は含めません。
 
 `release.sh` は次を確認し、途中で失敗した場合は一般向けZIPを新規生成しません。
 
 - 公開メタデータとライセンス、テスト、ビルド
 - Developer ID Application署名、Hardened Runtime、マイク入力用entitlement
-- Apple公証のAccepted結果、チケットの添付と検証
+- アプリとDMGそれぞれのApple公証Accepted結果、チケットの添付と検証
 - 署名の検証、Gatekeeperの実行アセスメント
 
-成果物は `dist/voice-seed-バージョン-macos-arm64.zip`、ソースZIP、`SHA256SUMS.txt` です。同じバージョン名の既存成果物は公開前の再実行で更新されます。公開済みリリースのファイルを差し替えるときは、バージョン・ビルドを上げてください。バイナリの署名にはタイムスタンプが入るため、バイト単位の再現可能ビルドを保証するものではありません。
+成果物は `dist/voice-seed-バージョン-macos-arm64.zip`、同名のDMG、固定名のZIPとDMG、ソースZIP、バージョン付きの`SHA256SUMS.txt`です。ZIPには公証チケットを添付済みのアプリを入れます。同じバージョン名の既存成果物は公開前の再実行で更新されます。公開済みリリースのファイルを差し替えるときは、バージョン・ビルドを上げてください。バイナリの署名にはタイムスタンプが入るため、バイト単位の再現可能ビルドを保証するものではありません。
 
 ## 追加の実機確認
 

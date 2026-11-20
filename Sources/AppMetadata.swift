@@ -8,7 +8,7 @@ enum AppMetadata {
     static let versionDescription = "バージョン \(version)（ビルド \(build)）"
 
     static func bundledText(_ name: String, extension ext: String = "md") -> String {
-        guard let url = Bundle.main.url(forResource: name, withExtension: ext),
+        guard let url = Bundle.main.url(forResource: name, withExtension: ext) ?? Bundle.main.url(forResource: name, withExtension: nil),
               let text = try? String(contentsOf: url, encoding: .utf8) else { return "公開準備中です。" }
         return text
     }
