@@ -207,7 +207,8 @@ final class KeyboardViewController: UIInputViewController {
         pagePicker.accessibilityLabel = "入力方法"
         pagePicker.backgroundColor = KeyboardPalette.control
         pagePicker.selectedSegmentTintColor = KeyboardPalette.paper
-        pagePicker.setTitleTextAttributes([.foregroundColor: KeyboardPalette.ink], for: .normal)
+        pagePicker.setTitleTextAttributes([.font: UIFont.keyboardSwitchLabel, .foregroundColor: KeyboardPalette.ink], for: .normal)
+        pagePicker.setTitleTextAttributes([.font: UIFont.keyboardSwitchLabel], for: .selected)
         let mic = UIImage(systemName: "mic.fill")
         mic?.accessibilityLabel = "音声入力"
         pagePicker.setImage(mic, forSegmentAt: InputPage.voice.rawValue)
@@ -219,7 +220,12 @@ final class KeyboardViewController: UIInputViewController {
         toolbar.addArrangedSubview(pagePicker)
         var hideStyle = UIButton.Configuration.filled()
         hideStyle.baseBackgroundColor = KeyboardPalette.control
-        hideStyle.title = "しまう"
+        hideStyle.title = "閉"
+        hideStyle.titleTextAttributesTransformer = UIConfigurationTextAttributesTransformer { attributes in
+            var updated = attributes
+            updated.font = .keyboardSwitchLabel
+            return updated
+        }
         hideStyle.image = UIImage(systemName: "keyboard.chevron.compact.down")
         hideStyle.imagePadding = 5
         hideStyle.cornerStyle = .capsule
@@ -227,7 +233,7 @@ final class KeyboardViewController: UIInputViewController {
         hideStyle.baseForegroundColor = KeyboardPalette.ink
         hideButton.configuration = hideStyle
         hideButton.accessibilityIdentifier = "toolbar-dismiss"
-        hideButton.accessibilityLabel = "キーボードをしまう"
+        hideButton.accessibilityLabel = "キーボードを閉じる"
         hideButton.setContentCompressionResistancePriority(.required, for: .horizontal)
         hideButton.addAction(UIAction { [weak self] _ in self?.hideKeyboard() }, for: .touchUpInside)
         notice.onSwipeDownFromTop = { [weak self] in self?.hideKeyboard() }

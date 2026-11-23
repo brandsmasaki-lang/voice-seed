@@ -1,28 +1,10 @@
 import UIKit
 
 extension UIFont {
+    static let keyboardSwitchLabel = UIFont.systemFont(ofSize: 13, weight: .medium)
+
     static func dictationPreview(compatibleWith traits: UITraitCollection) -> UIFont {
         UIFontMetrics(forTextStyle: .body).scaledFont(for: .systemFont(ofSize: 19), compatibleWith: traits)
-    }
-}
-
-/// Keep the arrowhead the same width while the shaft adapts to the preview height.
-private final class SwipeDownHint: UIView {
-    override func draw(_ rect: CGRect) {
-        let halfLength = min(bounds.height * 0.3, 30)
-        let wing = min(5.5, halfLength)
-        let tip = CGPoint(x: bounds.midX, y: bounds.midY + halfLength)
-        let arrow = UIBezierPath()
-        arrow.move(to: CGPoint(x: tip.x, y: bounds.midY - halfLength))
-        arrow.addLine(to: tip)
-        arrow.move(to: CGPoint(x: tip.x - wing, y: tip.y - wing))
-        arrow.addLine(to: tip)
-        arrow.addLine(to: CGPoint(x: tip.x + wing, y: tip.y - wing))
-        arrow.lineWidth = 1.75
-        arrow.lineCapStyle = .round
-        arrow.lineJoinStyle = .round
-        KeyboardPalette.secondaryInk.setStroke()
-        arrow.stroke()
     }
 }
 
@@ -30,7 +12,7 @@ private final class SwipeDownHint: UIView {
 /// inherit when a long recognition result is replaced by a short instruction.
 final class DictationPreviewView: UIScrollView, UIScrollViewDelegate {
     private let label = UILabel()
-    private let swipeHint = SwipeDownHint()
+    private let swipeHint = UILabel()
     private let swipeHintWidth: CGFloat = 15
     private var showingPreview = false
     private var followsTail = true
@@ -40,7 +22,7 @@ final class DictationPreviewView: UIScrollView, UIScrollViewDelegate {
     var onSwipeDownFromTop: (() -> Void)? {
         didSet {
             alwaysBounceVertical = onSwipeDownFromTop != nil
-            label.accessibilityHint = alwaysBounceVertical ? "先頭から下にスワイプするとキーボードをしまえます" : nil
+            label.accessibilityHint = alwaysBounceVertical ? "先頭から下にスワイプするとキーボードが閉じます" : nil
             setNeedsLayout()
         }
     }
@@ -70,8 +52,12 @@ final class DictationPreviewView: UIScrollView, UIScrollViewDelegate {
         label.font = .preferredFont(forTextStyle: .body, compatibleWith: traitCollection)
         label.adjustsFontForContentSizeCategory = true
         addSubview(label)
-        swipeHint.isOpaque = false
-        swipeHint.contentMode = .redraw
+        let hint = NSMutableAttributedString(string: "閉\n", attributes: [.font: UIFont.keyboardSwitchLabel.withSize(12)])
+        hint.append(NSAttributedString(string: "↓", attributes: [.font: UIFont.systemFont(ofSize: 11)]))
+        swipeHint.attributedText = hint
+        swipeHint.numberOfLines = 2
+        swipeHint.textAlignment = .center
+        swipeHint.textColor = KeyboardPalette.secondaryInk
         swipeHint.isAccessibilityElement = false
         swipeHint.isUserInteractionEnabled = false
         swipeHint.translatesAutoresizingMaskIntoConstraints = false
