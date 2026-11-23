@@ -277,25 +277,7 @@ final class KeyboardViewController: UIInputViewController {
         noticeHeight.isActive = true
         notice.accessibilityIdentifier = "dictation-preview"
         notice.accessibilityLabel = "認識プレビュー"
-        if isTablet {
-            let dismiss = UIButton(type: .system)
-            var style = UIButton.Configuration.filled()
-            style.image = UIImage(systemName: "chevron.down", withConfiguration: UIImage.SymbolConfiguration(pointSize: 20, weight: .semibold))
-            style.baseBackgroundColor = KeyboardPalette.control
-            style.baseForegroundColor = KeyboardPalette.ink
-            style.background.cornerRadius = 8
-            dismiss.configuration = style
-            dismiss.accessibilityIdentifier = "preview-dismiss"
-            dismiss.accessibilityLabel = "キーボードをしまう"
-            dismiss.accessibilityHint = "プレビューの先頭から下にスワイプしてもしまえます"
-            dismiss.addAction(UIAction { [weak self] _ in self?.hideKeyboard() }, for: .touchUpInside)
-            dismiss.widthAnchor.constraint(equalToConstant: 44).isActive = true
-            let previewRow = UIStackView(arrangedSubviews: [previewArea, dismiss])
-            previewRow.spacing = 6
-            previewColumn.addArrangedSubview(previewRow)
-        } else {
-            previewColumn.addArrangedSubview(previewArea)
-        }
+        previewColumn.addArrangedSubview(previewArea)
         previewColumn.addArrangedSubview(reviewHint)
         candidates.axis = .horizontal; candidates.spacing = 8
         candidateScroll.addSubview(candidates); candidates.translatesAutoresizingMaskIntoConstraints = false

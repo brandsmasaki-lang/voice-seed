@@ -10,13 +10,20 @@ extension UIFont {
 /// inherit when a long recognition result is replaced by a short instruction.
 final class DictationPreviewView: UIScrollView, UIScrollViewDelegate {
     private let label = UILabel()
+    private let swipeHint = UIImageView(image: UIImage(systemName: "arrow.down",
+        withConfiguration: UIImage.SymbolConfiguration(pointSize: 13, weight: .regular)))
+    private let swipeHintWidth: CGFloat = 15
     private var showingPreview = false
     private var followsTail = true
     private var pendingTail = false
     private var pendingTop = true
     private var dragStartedAtTop = false
     var onSwipeDownFromTop: (() -> Void)? {
-        didSet { alwaysBounceVertical = onSwipeDownFromTop != nil }
+        didSet {
+            alwaysBounceVertical = onSwipeDownFromTop != nil
+            label.accessibilityHint = alwaysBounceVertical ? "先頭から下にスワイプするとキーボードをしまえます" : nil
+            setNeedsLayout()
+        }
     }
 
     var text: String {
@@ -44,6 +51,17 @@ final class DictationPreviewView: UIScrollView, UIScrollViewDelegate {
         label.font = .preferredFont(forTextStyle: .body, compatibleWith: traitCollection)
         label.adjustsFontForContentSizeCategory = true
         addSubview(label)
+        swipeHint.tintColor = KeyboardPalette.secondaryInk
+        swipeHint.contentMode = .center
+        swipeHint.isAccessibilityElement = false
+        swipeHint.isUserInteractionEnabled = false
+        swipeHint.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(swipeHint)
+        NSLayoutConstraint.activate([
+            swipeHint.widthAnchor.constraint(equalToConstant: swipeHintWidth),
+            swipeHint.trailingAnchor.constraint(equalTo: frameLayoutGuide.trailingAnchor, constant: -5),
+            swipeHint.centerYAnchor.constraint(equalTo: frameLayoutGuide.centerYAnchor)
+        ])
         accessibilityIdentifier = "dictation-preview"
         label.accessibilityLabel = "認識プレビュー"
     }
@@ -66,8 +84,9 @@ final class DictationPreviewView: UIScrollView, UIScrollViewDelegate {
 
     override func layoutSubviews() {
         super.layoutSubviews()
-        guard bounds.width > 16, bounds.height > 0 else { return }
-        let width = bounds.width - 16
+        swipeHint.isHidden = traitCollection.userInterfaceIdiom != .pad || onSwipeDownFromTop == nil
+        let width = bounds.width - 16 - (swipeHint.isHidden ? 0 : swipeHintWidth)
+        guard width > 0, bounds.height > 0 else { return }
         let height = ceil(label.sizeThatFits(CGSize(width: width, height: .greatestFiniteMagnitude)).height)
         label.frame = CGRect(x: 8, y: 8, width: width, height: height)
         let size = CGSize(width: bounds.width, height: height + 16)
