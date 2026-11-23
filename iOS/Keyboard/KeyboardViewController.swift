@@ -4,30 +4,20 @@ import SwiftUI
 
 private struct ActivateKeyboardButton: View {
     var destination: URL?
-    var large = false
     private var title: String { destination == VoiceSeedLink.keyboardSettingsURL ? "マイクの設定" : "タップして話す" }
 
     var body: some View {
         Link(destination: destination ?? URL(string: "koenotane://settings")!) {
-            Group {
-                if large {
-                    Image(systemName: destination == VoiceSeedLink.keyboardSettingsURL ? "mic.badge.plus" : "mic.fill")
-                        .font(.system(size: 32, weight: .semibold))
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
-                } else {
-                    Label(title, systemImage: "mic").font(.system(size: 14, weight: .semibold))
-                        .padding(.horizontal, 14).padding(.vertical, 8)
-                }
-            }
-            .foregroundStyle(Color(uiColor: large ? KeyboardPalette.micInk : .systemBackground))
-            .background(Color(uiColor: large ? KeyboardPalette.mic : .label), in: Capsule())
-            .overlay {
-                if large {
+            Image(systemName: destination == VoiceSeedLink.keyboardSettingsURL ? "mic.badge.plus" : "mic.fill")
+                .font(.system(size: 32, weight: .semibold))
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .foregroundStyle(Color(uiColor: KeyboardPalette.micInk))
+                .background(Color(uiColor: KeyboardPalette.mic), in: Capsule())
+                .overlay {
                     Capsule().strokeBorder(Color(uiColor: KeyboardPalette.micInk), lineWidth: 1.5)
                         .allowsHitTesting(false)
                 }
-            }
-            .contentShape(Capsule())
+                .contentShape(Capsule())
         }.accessibilityLabel(title).disabled(destination == nil).buttonStyle(.plain)
     }
 }
@@ -46,9 +36,9 @@ private struct KeyboardSettingsButton: View {
 final class KeyboardViewController: UIInputViewController {
     private enum Mode: Equatable { case kana, abc, numbers, emoji }
     private var mode: Mode = .kana
-    private enum PhonePage: Int { case voice, english, japanese }
-    private var phonePage: PhonePage = .voice
-    private let phonePages = UISegmentedControl(items: ["音声", "EN", "あ"])
+    private enum InputPage: Int { case voice, english, japanese }
+    private var page: InputPage = .voice
+    private let pagePicker = UISegmentedControl(items: ["音声", "EN", "あ"])
     private let voicePane = UIView()
     private let voiceActions = UIStackView()
     private static let voiceMicHeight: CGFloat = 64
@@ -66,7 +56,6 @@ final class KeyboardViewController: UIInputViewController {
     private var sideBySide = false
     private let candidates = UIStackView()
     private let candidateScroll = UIScrollView()
-    private let modeKeys = UIStackView()
     private let bodyStack = UIStackView()
     private let bottomBar = UIStackView()
     private var meterStep: Int?
@@ -76,6 +65,7 @@ final class KeyboardViewController: UIInputViewController {
     private let pasteButton = UIButton(type: .system)
     private let cancelButton = UIButton(type: .system)
     private var discardMenuID: UUID?
+    private var menuOffersReview = false
     private var menuHasQueuedPaste = false
     private let notice = DictationPreviewView()
     private let correctionStrip = CorrectionStrip()
@@ -151,7 +141,7 @@ final class KeyboardViewController: UIInputViewController {
         super.viewDidLoad()
         if !isTablet { hasDictationKey = true }
         view.backgroundColor = KeyboardPalette.background
-        if !isTablet { view.tintColor = KeyboardPalette.ink }
+        view.tintColor = KeyboardPalette.ink
         root.axis = .vertical; root.spacing = 6; root.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(root)
         keyboardHeight = view.heightAnchor.constraint(equalToConstant: 328)
@@ -180,28 +170,22 @@ final class KeyboardViewController: UIInputViewController {
         let settings = UIHostingController(rootView: KeyboardSettingsButton { [weak self] in self?.importSystemDictionary() })
         settingsHost = settings
         mount(settings, in: toolbar); settings.view.widthAnchor.constraint(equalToConstant: 36).isActive = true
-        let primaryActions = isTablet ? toolbar : voiceActions
-        let activation = UIHostingController(rootView: ActivateKeyboardButton(large: !isTablet))
+        let activation = UIHostingController(rootView: ActivateKeyboardButton())
         activationHost = activation
-        mount(activation, in: primaryActions)
-        speechButton.layer.cornerRadius = 17
-        speechButton.titleLabel?.font = .systemFont(ofSize: 14, weight: .semibold)
-        speechButton.contentEdgeInsets = UIEdgeInsets(top: 8, left: 14, bottom: 8, right: 14)
+        mount(activation, in: voiceActions)
         speechButton.addAction(UIAction { [weak self] _ in self?.speechAction() }, for: .touchUpInside)
-        if !isTablet {
-            var style = UIButton.Configuration.filled()
-            style.cornerStyle = .capsule
-            style.contentInsets = .zero
-            style.image = UIImage(systemName: "mic.fill")
-            style.background.strokeColor = KeyboardPalette.micInk
-            style.background.strokeWidth = 1.5
-            style.baseBackgroundColor = KeyboardPalette.mic
-            style.baseForegroundColor = KeyboardPalette.micInk
-            style.preferredSymbolConfigurationForImage = UIImage.SymbolConfiguration(pointSize: 32, weight: .semibold)
-            speechButton.configuration = style
-        }
+        var style = UIButton.Configuration.filled()
+        style.cornerStyle = .capsule
+        style.contentInsets = .zero
+        style.image = UIImage(systemName: "mic.fill")
+        style.background.strokeColor = KeyboardPalette.micInk
+        style.background.strokeWidth = 1.5
+        style.baseBackgroundColor = KeyboardPalette.mic
+        style.baseForegroundColor = KeyboardPalette.micInk
+        style.preferredSymbolConfigurationForImage = UIImage.SymbolConfiguration(pointSize: 32, weight: .semibold)
+        speechButton.configuration = style
         speechButton.isHidden = true
-        primaryActions.addArrangedSubview(speechButton)
+        voiceActions.addArrangedSubview(speechButton)
         reviewButton.setTitle("修正する", for: .normal)
         reviewButton.accessibilityHint = "話した文をプレビューで直します"
         reviewButton.titleLabel?.font = .systemFont(ofSize: 15, weight: .semibold)
@@ -209,34 +193,32 @@ final class KeyboardViewController: UIInputViewController {
         reviewButton.isHidden = true
         var pasteStyle = UIButton.Configuration.filled()
         pasteStyle.title = "貼り付ける"
-        pasteStyle.baseBackgroundColor = isTablet ? .systemGreen : KeyboardPalette.mic
-        pasteStyle.baseForegroundColor = isTablet ? .black : KeyboardPalette.micInk
+        pasteStyle.baseBackgroundColor = KeyboardPalette.mic
+        pasteStyle.baseForegroundColor = KeyboardPalette.micInk
         pasteStyle.cornerStyle = .capsule
         pasteButton.configuration = pasteStyle
         pasteButton.accessibilityHint = "プレビューの文を現在の入力欄に入れます"
         pasteButton.addAction(UIAction { [weak self] _ in self?.insertRetainedDraft() }, for: .touchUpInside)
         pasteButton.isHidden = true
-        primaryActions.addArrangedSubview(pasteButton)
+        voiceActions.addArrangedSubview(pasteButton)
         toolbar.addArrangedSubview(reviewButton)
         toolbar.addArrangedSubview(UIView())
-        if !isTablet {
-            toolbar.spacing = 4
-            phonePages.accessibilityLabel = "入力方法"
-            phonePages.backgroundColor = KeyboardPalette.control
-            phonePages.selectedSegmentTintColor = KeyboardPalette.paper
-            phonePages.setTitleTextAttributes([.foregroundColor: KeyboardPalette.ink], for: .normal)
-            let mic = UIImage(systemName: "mic.fill")
-            mic?.accessibilityLabel = "音声入力"
-            phonePages.setImage(mic, forSegmentAt: PhonePage.voice.rawValue)
-            phonePages.selectedSegmentIndex = PhonePage.voice.rawValue
-            phonePages.accessibilityIdentifier = "phone-input-pages"
-            phonePages.addAction(UIAction { [weak self] _ in self?.selectPhonePage() }, for: .valueChanged)
-            phonePages.widthAnchor.constraint(greaterThanOrEqualToConstant: 126).isActive = true
-            phonePages.heightAnchor.constraint(equalToConstant: 44).isActive = true
-            toolbar.addArrangedSubview(phonePages)
-        }
-        var hideStyle: UIButton.Configuration = isTablet ? .tinted() : .filled()
-        if !isTablet { hideStyle.baseBackgroundColor = KeyboardPalette.control }
+        toolbar.spacing = 4
+        pagePicker.accessibilityLabel = "入力方法"
+        pagePicker.backgroundColor = KeyboardPalette.control
+        pagePicker.selectedSegmentTintColor = KeyboardPalette.paper
+        pagePicker.setTitleTextAttributes([.foregroundColor: KeyboardPalette.ink], for: .normal)
+        let mic = UIImage(systemName: "mic.fill")
+        mic?.accessibilityLabel = "音声入力"
+        pagePicker.setImage(mic, forSegmentAt: InputPage.voice.rawValue)
+        pagePicker.selectedSegmentIndex = InputPage.voice.rawValue
+        pagePicker.accessibilityIdentifier = "phone-input-pages"
+        pagePicker.addAction(UIAction { [weak self] _ in self?.selectInputPage() }, for: .valueChanged)
+        pagePicker.widthAnchor.constraint(greaterThanOrEqualToConstant: 126).isActive = true
+        pagePicker.heightAnchor.constraint(equalToConstant: 44).isActive = true
+        toolbar.addArrangedSubview(pagePicker)
+        var hideStyle = UIButton.Configuration.filled()
+        hideStyle.baseBackgroundColor = KeyboardPalette.control
         hideStyle.title = "しまう"
         hideStyle.image = UIImage(systemName: "keyboard.chevron.compact.down")
         hideStyle.imagePadding = 5
@@ -251,7 +233,7 @@ final class KeyboardViewController: UIInputViewController {
         toolbar.addArrangedSubview(hideButton)
         // Keep the dismiss action at the screen edge even when iPad keys are narrow or left-aligned.
         let toolbarRow = UIView()
-        if !isTablet { root.addArrangedSubview(previewColumn) }
+        root.addArrangedSubview(previewColumn)
         root.addArrangedSubview(toolbarRow)
         toolbar.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(toolbar)
@@ -267,13 +249,10 @@ final class KeyboardViewController: UIInputViewController {
         panes.axis = .vertical; panes.spacing = 6
         previewColumn.axis = .vertical; previewColumn.spacing = 6
         keysColumn.axis = .vertical
-        if isTablet { panes.addArrangedSubview(previewColumn) }
         panes.addArrangedSubview(keysColumn)
-        if !isTablet {
-            configurePhoneVoicePane()
-            panes.addArrangedSubview(voicePane)
-            keysColumn.isHidden = true
-        }
+        configureVoicePane()
+        panes.addArrangedSubview(voicePane)
+        keysColumn.isHidden = true
         root.addArrangedSubview(panes)
         keysWidth = keysColumn.widthAnchor.constraint(equalToConstant: 520)
         reviewHint.font = .preferredFont(forTextStyle: .footnote)
@@ -293,14 +272,12 @@ final class KeyboardViewController: UIInputViewController {
             ])
         }
         correctionStrip.isHidden = true
-        // On phones the preview, hint and candidates share one fixed-height band.
-        let sizedPreview = isTablet ? previewArea : previewColumn
-        noticeHeight = sizedPreview.heightAnchor.constraint(equalToConstant: 46)
+        noticeHeight = previewColumn.heightAnchor.constraint(equalToConstant: 46)
         noticeHeight.isActive = true
         notice.accessibilityIdentifier = "dictation-preview"
         notice.accessibilityLabel = "認識プレビュー"
         previewColumn.addArrangedSubview(previewArea)
-        previewColumn.insertArrangedSubview(reviewHint, at: isTablet ? 0 : 1)
+        previewColumn.addArrangedSubview(reviewHint)
         candidates.axis = .horizontal; candidates.spacing = 8
         candidateScroll.addSubview(candidates); candidates.translatesAutoresizingMaskIntoConstraints = false
         NSLayoutConstraint.activate([
@@ -314,20 +291,6 @@ final class KeyboardViewController: UIInputViewController {
         candidateHeight.priority = .defaultHigh; candidateHeight.isActive = true
         previewColumn.addArrangedSubview(candidateScroll)
         bodyStack.axis = .vertical; bodyStack.spacing = 5
-        for button in [
-            key("あ", fontSize: 24) { [weak self] in self?.switchMode(.kana) },
-            key("ABC", fontSize: 20) { [weak self] in self?.switchMode(.abc) },
-            key("123", fontSize: 22) { [weak self] in self?.switchMode(.numbers) },
-            key("😊", fontSize: 24) { [weak self] in self?.switchMode(.emoji) }
-        ] { modeKeys.addArrangedSubview(button) }
-        modeKeys.axis = .vertical
-        modeKeys.spacing = 5
-        modeKeys.distribution = .fillEqually
-        modeKeys.accessibilityIdentifier = "keyboard-mode-switches"
-        let modeWidth = modeKeys.widthAnchor.constraint(equalToConstant: 68)
-        modeWidth.priority = .defaultHigh
-        modeWidth.isActive = true
-        keyArea.addArrangedSubview(modeKeys)
         keyArea.addArrangedSubview(bodyStack)
         keyArea.axis = .horizontal
         keyArea.spacing = 6
@@ -343,8 +306,7 @@ final class KeyboardViewController: UIInputViewController {
         globe.accessibilityLabel = "別のキーボード"
         globe.addTarget(self, action: #selector(handleInputModeList(from:with:)), for: .allTouchEvents)
         globe.widthAnchor.constraint(equalToConstant: 40).isActive = true
-        if isTablet { bottomBar.addArrangedSubview(globe) }
-        else { toolbar.insertArrangedSubview(globe, at: 0) }
+        toolbar.insertArrangedSubview(globe, at: 0)
         bottomBar.spacing = 5
         if isTablet {
             for (title, direction) in [("←", -1), ("→", 1)] {
@@ -384,7 +346,7 @@ final class KeyboardViewController: UIInputViewController {
         let bottomHeight = bottomBar.heightAnchor.constraint(equalToConstant: 44)
         bottomHeight.priority = .defaultHigh; bottomHeight.isActive = true
         root.addArrangedSubview(bottomBar)
-        bottomBar.isHidden = !isTablet
+        bottomBar.isHidden = true
         buildKeys()
         updateLayoutPreferences()
         updatePreviewLayout()
@@ -398,7 +360,7 @@ final class KeyboardViewController: UIInputViewController {
         dismissKeyboard()
     }
 
-    private func configurePhoneVoicePane() {
+    private func configureVoicePane() {
         voiceActions.axis = .vertical
         voiceActions.translatesAutoresizingMaskIntoConstraints = false
         voicePane.addSubview(voiceActions)
@@ -450,22 +412,23 @@ final class KeyboardViewController: UIInputViewController {
         }
     }
 
-    private func selectPhonePage() {
-        guard let next = PhonePage(rawValue: phonePages.selectedSegmentIndex), !voiceInputBusy else {
-            phonePages.selectedSegmentIndex = phonePage.rawValue
+    private func selectInputPage() {
+        guard let next = InputPage(rawValue: pagePicker.selectedSegmentIndex), !voiceInputBusy else {
+            pagePicker.selectedSegmentIndex = page.rawValue
             return
         }
         commit()
+        endManualReading()
+        expandedDraftID = nil
         resetChoices()
-        showPhonePage(next)
+        showInputPage(next)
         refresh()
     }
 
-    private func showPhonePage(_ page: PhonePage) {
-        guard !isTablet else { return }
-        phonePages.selectedSegmentIndex = page.rawValue
-        guard phonePage != page else { return }
-        phonePage = page
+    private func showInputPage(_ page: InputPage) {
+        pagePicker.selectedSegmentIndex = page.rawValue
+        guard self.page != page else { return }
+        self.page = page
         let voice = page == .voice
         voicePane.isHidden = !voice
         keysColumn.isHidden = voice
@@ -488,7 +451,7 @@ final class KeyboardViewController: UIInputViewController {
         // Reading documentIdentifier here can raise an Objective-C exception
         // when switching back from another app and terminate the extension.
         isVisible = false
-        showPhonePage(.voice)
+        showInputPage(.voice)
         cancelPending(); focusID = UUID(); currentDocument = ""; tapCycle.reset()
         activationTicket = nil
         do { store = try AppGroupContainer.open() } catch { notice.text = error.localizedDescription }
@@ -570,32 +533,12 @@ final class KeyboardViewController: UIInputViewController {
         let step = level.map { Int((max(0, min(1, $0)) * 10).rounded()) }
         guard step != meterStep else { return }
         meterStep = step
-        if !isTablet {
-            var style = speechButton.configuration
-            style?.image = step.map(recordingMicrophone) ?? UIImage(systemName: "mic.fill")
-            style?.baseBackgroundColor = step == nil ? KeyboardPalette.mic : KeyboardPalette.recording
-            style?.baseForegroundColor = step == nil ? KeyboardPalette.micInk : KeyboardPalette.onRecording
-            speechButton.configuration = style
-            speechButton.accessibilityValue = step.map { "マイク入力レベル " + String($0 * 10) + "パーセント" }
-            return
-        }
-        guard let step else {
-            speechButton.setImage(nil, for: .normal)
-            speechButton.accessibilityValue = nil
-            return
-        }
-        let image = UIGraphicsImageRenderer(size: CGSize(width: 24, height: 18)).image { _ in
-            UIColor.black.setFill()
-            for index in 0..<5 {
-                let peak = CGFloat(15 - 4 * abs(2 - index))
-                let height = 2 + peak * CGFloat(step) / 10
-                let bar = CGRect(x: CGFloat(index * 4), y: (18 - height) / 2, width: 2.5, height: height)
-                UIBezierPath(roundedRect: bar, cornerRadius: 1.25).fill()
-            }
-        }
-        let bars = image.withRenderingMode(.alwaysOriginal)
-        speechButton.setImage(bars, for: .normal)
-        speechButton.accessibilityValue = "マイク入力レベル \(step * 10)パーセント"
+        var style = speechButton.configuration
+        style?.image = step.map(recordingMicrophone) ?? UIImage(systemName: "mic.fill")
+        style?.baseBackgroundColor = step == nil ? KeyboardPalette.mic : KeyboardPalette.recording
+        style?.baseForegroundColor = step == nil ? KeyboardPalette.micInk : KeyboardPalette.onRecording
+        speechButton.configuration = style
+        speechButton.accessibilityValue = step.map { "マイク入力レベル " + String($0 * 10) + "パーセント" }
     }
 
     private func recordingMicrophone(step: Int) -> UIImage {
@@ -624,12 +567,12 @@ final class KeyboardViewController: UIInputViewController {
         guard hasFullAccess else {
             let settingsURL = VoiceSeedLink.keyboardSettingsURL
             if activationHost?.rootView.destination != settingsURL {
-                activationHost?.rootView = ActivateKeyboardButton(destination: settingsURL, large: !isTablet)
+                activationHost?.rootView = ActivateKeyboardButton(destination: settingsURL)
             }
             activationTicket = nil
-            if !isTablet { bottomBar.isHidden = true }
+            bottomBar.isHidden = page == .voice || !isTablet
             cancelButton.isHidden = true
-            phonePages.isEnabled = true
+            pagePicker.isEnabled = true
             voiceReturn.isEnabled = true
             speechButton.isHidden = true; activationHost?.view.isHidden = false
             reviewButton.isHidden = true; pasteButton.isHidden = true; reviewHint.isHidden = true
@@ -664,7 +607,7 @@ final class KeyboardViewController: UIInputViewController {
                 let ticket = KeyboardLaunch(documentID: document, createdAt: Date(), keyboardID: keyboardID)
                 try store.update { $0.keyboardActivationTicket = ticket }
                 activationTicket = ticket
-                activationHost?.rootView = ActivateKeyboardButton(destination: VoiceSeedLink.dictationURL(ticket: ticket.id), large: !isTablet)
+                activationHost?.rootView = ActivateKeyboardButton(destination: VoiceSeedLink.dictationURL(ticket: ticket.id))
             }
             if isVisible, ProcessInfo.processInfo.systemUptime >= focusSettlesAt,
                pending == nil, snapshot.retainedDraft == nil,
@@ -680,7 +623,7 @@ final class KeyboardViewController: UIInputViewController {
                     state.commands.append(.init(kind: .start, request: request))
                     return request
                 }
-                if let request { endManualReading(); resetChoices(); commit(); showPhonePage(.voice); pending = request }
+                if let request { endManualReading(); resetChoices(); commit(); showInputPage(.voice); pending = request }
             }
             syncDraftForReview()
             deliverRequestedDraft(in: document)
@@ -698,7 +641,7 @@ final class KeyboardViewController: UIInputViewController {
             speechButton.isHidden = !live || hasDraft || finalizing
             pasteButton.isHidden = !hasDraft && !finalizing
             let pasteTitle = finalizing ? (queued ? "貼り付け待ち" : "確定後に貼り付け") : "貼り付ける"
-            let showProgress = !isTablet && queued
+            let showProgress = queued
             let visiblePasteTitle = showProgress ? nil : pasteTitle
             if pasteButton.configuration?.title != visiblePasteTitle || pasteButton.configuration?.showsActivityIndicator != showProgress {
                 var style = pasteButton.configuration
@@ -724,11 +667,19 @@ final class KeyboardViewController: UIInputViewController {
             }
             let discardID = snapshot.retainedDraft?.id ?? pending?.id
             cancelButton.isHidden = discardID == nil
-            if discardMenuID != discardID || menuHasQueuedPaste != queued {
+            let offersReview = isTablet && canBreakRecording
+            if discardMenuID != discardID || menuHasQueuedPaste != queued || menuOffersReview != offersReview {
+                menuOffersReview = offersReview
                 discardMenuID = discardID
                 menuHasQueuedPaste = queued
                 cancelButton.menu = discardID.map { id in
                     var actions: [UIAction] = []
+                    if offersReview {
+                        actions.append(UIAction(title: "録音を終えて見直す") { [weak self] _ in
+                            guard let self, pending?.id == id, canBreakRecording else { return }
+                            speechAction(pasteWhenStopped: false)
+                        })
+                    }
                     if queued {
                         actions.append(UIAction(title: "貼り付けの予約を取り消す") { [weak self] _ in
                             guard let self, draftInsertion?.id == id else { return }
@@ -742,25 +693,19 @@ final class KeyboardViewController: UIInputViewController {
                     return UIMenu(children: actions)
                 }
             }
-            if !isTablet { bottomBar.isHidden = phonePage == .voice || !hasDraft }
+            bottomBar.isHidden = page == .voice || (!isTablet && !hasDraft)
             settingsHost?.view.isHidden = pending != nil || hasDraft
             let label: String
             switch snapshot.phase {
-            case .listening: label = isTablet ? "録音を終了" : "終了して貼り付け"
+            case .listening: label = "終了して貼り付け"
             case .processing: label = "文章を確定中"
-            case .ready: label = isTablet ? "🎙 タップして話す" : "録音を開始"
+            case .ready: label = "録音を開始"
             default: label = snapshot.phase.label
             }
             showMicrophoneLevel(snapshot.phase == .listening ? snapshot.level : nil)
-            if isTablet {
-                speechButton.setTitle(label, for: .normal)
-                speechButton.backgroundColor = snapshot.phase == .listening ? .systemGreen : .label
-                speechButton.setTitleColor(snapshot.phase == .listening ? .black : .systemBackground, for: .normal)
-            } else {
-                speechButton.accessibilityLabel = label
-                phonePages.isEnabled = !voiceInputBusy
-                voiceReturn.isEnabled = !voiceInputBusy || canBreakRecording
-            }
+            speechButton.accessibilityLabel = label
+            pagePicker.isEnabled = !voiceInputBusy && manualEdit == nil && editingCorrection == nil
+            voiceReturn.isEnabled = !voiceInputBusy || canBreakRecording
             speechButton.isEnabled = [.ready, .listening].contains(snapshot.phase)
                 && !(snapshot.phase == .ready && pending != nil)
                 && !(snapshot.phase == .listening && (pending == nil || pending?.stoppedAt != nil))
@@ -775,7 +720,7 @@ final class KeyboardViewController: UIInputViewController {
                 notice.display(result.message, isPreview: false)
             } else { notice.display(previewText, isPreview: showingPreview || hasDraft) }
             let capturing = !hasDraft && (pending != nil || snapshot.phase == .listening || snapshot.phase == .processing)
-            correctionStrip.isHidden = correction == nil || showingPreview || capturing || !composer.isEmpty || manualEdit != nil
+            correctionStrip.isHidden = page == .voice || correction == nil || showingPreview || capturing || !composer.isEmpty || manualEdit != nil
             notice.isHidden = !correctionStrip.isHidden
             selectionPart.isHidden = correctionStrip.isHidden || highlightedRange == nil
             undoButton.isHidden = correction?.undo == nil || correctionStrip.isHidden || copySuggestion != nil || !selectionPart.isHidden
@@ -805,7 +750,7 @@ final class KeyboardViewController: UIInputViewController {
         catch { notice.text = error.localizedDescription }
     }
 
-    private func speechAction() {
+    private func speechAction(pasteWhenStopped: Bool = true) {
         endManualReading(); resetChoices()
         guard let document = availableDocumentID(), document == currentDocument else { return }
         guard let store else { return }
@@ -814,7 +759,7 @@ final class KeyboardViewController: UIInputViewController {
                 request.stoppedAt = Date()
                 try store.enqueue(.init(kind: .stop, request: request))
                 pending = request
-                if !isTablet {
+                if pasteWhenStopped {
                     draftInsertion = (request.id, document, focusID, nil)
                 }
                 speechButton.isEnabled = false
@@ -834,6 +779,7 @@ final class KeyboardViewController: UIInputViewController {
 
     private func reviewAction() {
         guard let draft = snapshot.retainedDraft, draft.id == reviewedDraftID else { return }
+        showInputPage(.japanese)
         expandedDraftID = draft.id
         refresh()
         UIAccessibility.post(notification: .layoutChanged, argument: correctionStrip)
@@ -1100,6 +1046,7 @@ final class KeyboardViewController: UIInputViewController {
         finishReplacement.isHidden = false
         composer.clear()
         tapCycle.reset()
+        showInputPage(.japanese)
         mode = .kana
         buildKeys()
         lastCandidateText = ""
@@ -1294,41 +1241,15 @@ final class KeyboardViewController: UIInputViewController {
     }
     private func buildKeys() {
         clearStack(bodyStack)
-        guard isTablet || phonePage != .voice else { return }
-        let keypad = !isTablet && phonePage == .japanese
-        modeKeys.isHidden = keypad || (!isTablet && phonePage == .english)
-        composer.convertsReading = !keypad || mode == .kana
-        if keypad {
-            buildPhoneKeypad()
+        guard page != .voice else { return }
+        composer.convertsReading = page != .japanese || mode == .kana
+        if page == .japanese {
+            buildJapaneseKeypad()
             return
         }
         switch mode {
-        case .kana:
-            let middle = UIStackView(); middle.axis = .vertical; middle.spacing = 5; middle.distribution = .fillEqually
-            for groups in KanaLayout.rows {
-                middle.addArrangedSubview(row(groups.map { values in
-                    let button = KanaFlickKey(values: values)
-                    button.onInput = { [weak self] values, index in
-                        if values[index] == "゛゜小" { self?.alternate() }
-                        else { self?.typeKana(values: values, index: index) }
-                    }; return button
-                }))
-            }
-            let space = spaceButton("空白")
-            let right = UIStackView(arrangedSubviews: [deleteKey(), space])
-            right.axis = .vertical
-            right.spacing = 5
-            if isTablet {
-                right.arrangedSubviews[0].heightAnchor.constraint(equalToConstant: 45).isActive = true
-                space.heightAnchor.constraint(equalToConstant: 45).isActive = true
-            } else {
-                right.addArrangedSubview(previousCharacterKey())
-                right.distribution = .fillEqually
-            }
-            right.addArrangedSubview(key("改行") { [weak self] in self?.enter() })
-            let body = UIStackView(arrangedSubviews: [middle, right]); body.axis = .horizontal; body.spacing = 6
-            right.widthAnchor.constraint(equalTo: body.widthAnchor, multiplier: 0.22).isActive = true
-            bodyStack.addArrangedSubview(body)
+        case .kana, .emoji:
+            return
         case .abc:
             for letters in ["qwertyuiop", "asdfghjkl", "zxcvbnm"] {
                 bodyStack.addArrangedSubview(row(letters.map { character in
@@ -1336,28 +1257,26 @@ final class KeyboardViewController: UIInputViewController {
                     return key(value, fontSize: 30) { [weak self] in self?.typeDirect(value) }
                 }))
             }
-            var controls: [UIView] = [
+            let controls: [UIView] = [
+                key("123") { [weak self] in self?.switchMode(.numbers) },
                 key("⇧") { [weak self] in self?.uppercase.toggle(); self?.buildKeys() },
                 spaceButton("space"),
                 deleteKey(),
                 key("改行") { [weak self] in self?.enter() }
             ]
-            if !isTablet && phonePage == .english {
-                controls.insert(key("123") { [weak self] in self?.switchMode(.numbers) }, at: 0)
-            }
             bodyStack.addArrangedSubview(row(controls))
             bodyStack.distribution = .fillEqually
-        case .numbers, .emoji:
-            let rows = mode == .numbers ? ["1234567890", "-/:;()¥&@\"", ".,?!'％+＝〜"] : ["😊😂🥰😅👍", "🙏🙇🎉✨❤️", "👀💡✅📩🌱"]
+        case .numbers:
+            let rows = ["1234567890", "-/:;()¥&@\"", ".,?!'％+＝〜"]
             for letters in rows {
                 bodyStack.addArrangedSubview(row(letters.map { character in
                     key(String(character), fontSize: 30) { [weak self] in self?.typeDirect(String(character)) }
                 }))
             }
-            var controls: [UIView] = [spaceButton("空白"), deleteKey(), key("改行") { [weak self] in self?.enter() }]
-            if !isTablet && phonePage == .english {
-                controls.insert(key("ABC") { [weak self] in self?.switchMode(.abc) }, at: 0)
-            }
+            let controls: [UIView] = [
+                key("ABC") { [weak self] in self?.switchMode(.abc) },
+                spaceButton("空白"), deleteKey(), key("改行") { [weak self] in self?.enter() }
+            ]
             bodyStack.addArrangedSubview(row(controls))
             bodyStack.distribution = .fillEqually
         }
@@ -1374,7 +1293,7 @@ final class KeyboardViewController: UIInputViewController {
         button.isEnabled = last.map { KanaLayout.alternate($0) != $0 } ?? true
     }
 
-    private func buildPhoneKeypad() {
+    private func buildJapaneseKeypad() {
         let left = UIStackView()
         let center = UIStackView()
         let right = UIStackView()
@@ -1677,36 +1596,32 @@ final class KeyboardViewController: UIInputViewController {
             keyboardHeight.constant = 10 + 44 + root.spacing + keyRows
             return
         }
-        if !isTablet && phonePage == .voice {
+        if page == .voice {
             noticeHeight.constant = max(76, ceil(UIFont.dictationPreview(compatibleWith: traitCollection).lineHeight) * 2 + 32)
             let controls = 4 + Self.voiceMicHeight + Self.voiceButtonGap + Self.voiceReturnHeight + 4
             keyboardHeight.constant = 10 + noticeHeight.constant + 44 + 2 * root.spacing + controls
             return
         }
-        if !isTablet {
-            // Reserve the same space before, during and after composition. Resizing the
-            // extension animates the key under a finger even if its final frame is unchanged.
-            let line = ceil(UIFont.dictationPreview(compatibleWith: traitCollection).lineHeight)
-            noticeHeight.constant = Self.candidateRowHeight + 2 * previewColumn.spacing
-                + ceil(reviewHint.font.lineHeight) + line + 16
-            keyboardHeight.constant = 306 + noticeHeight.constant - (bottomBar.isHidden ? 44 + root.spacing : 0)
-            return
-        }
-        let extraRows: CGFloat = (candidateScroll.isHidden ? 0 : 54) + 50
-        let expanded = reviewedDraftID != nil && reviewedDraftID == expandedDraftID && manualEdit == nil
-        noticeHeight.constant = expanded ? 120 : 80
-        keyboardHeight.constant = 256 + noticeHeight.constant + extraRows + (reviewHint.isHidden ? 0 : ceil(reviewHint.font.lineHeight) + 6)
+        // Reserve the candidate band before typing so repeated taps stay on the same key.
+        let line = ceil(UIFont.dictationPreview(compatibleWith: traitCollection).lineHeight)
+        let band = Self.candidateRowHeight + 2 * previewColumn.spacing + ceil(reviewHint.font.lineHeight) + line + 16
+        let reviewing = reviewedDraftID != nil && expandedDraftID == reviewedDraftID && manualEdit == nil
+        noticeHeight.constant = reviewing ? max(140, band) : band
+        keyboardHeight.constant = 306 + noticeHeight.constant - (bottomBar.isHidden ? 44 + root.spacing : 0)
     }
 
     private func updateLandscapeLayout() {
         guard isTablet else { return }
         let width = view.bounds.width - view.safeAreaInsets.left - view.safeAreaInsets.right - 12
         let landscape = view.window?.windowScene?.effectiveGeometry.interfaceOrientation.isLandscape == true
-        let wide = landscape && width >= 680
+        let wide = page != .voice && landscape && width >= 680
         if wide != sideBySide {
             sideBySide = wide
             panes.axis = wide ? .horizontal : .vertical
             panes.spacing = wide ? 10 : 6
+            previewColumn.removeFromSuperview()
+            if wide { panes.insertArrangedSubview(previewColumn, at: 0) }
+            else { root.insertArrangedSubview(previewColumn, at: 0) }
             noticeHeight.isActive = !wide
             keysWidth.isActive = wide
             bottomBar.removeFromSuperview()
@@ -1728,7 +1643,8 @@ final class KeyboardViewController: UIInputViewController {
         } else {
             rootMaximumWidth.constant = preferred
         }
-        let keysFirst = wide && snapshot.settings.tabletKeyboardPosition == .left
+        guard wide else { return }
+        let keysFirst = snapshot.settings.tabletKeyboardPosition == .left
         if (panes.arrangedSubviews.first === keysColumn) != keysFirst {
             panes.removeArrangedSubview(keysColumn)
             panes.insertArrangedSubview(keysColumn, at: keysFirst ? 0 : panes.arrangedSubviews.count)
