@@ -213,7 +213,7 @@ struct VoiceSeedSettings: View {
             Section("キーボード") {
                 if UIDevice.current.userInterfaceIdiom == .phone {
                     Picker("キー配列", selection: Binding(
-                        get: { model.state.settings.phoneKeyboardLayout ?? .standard },
+                        get: { model.state.settings.phoneKeyboardLayout ?? .keypad },
                         set: { value in model.updateSettings { $0.phoneKeyboardLayout = value } }
                     )) {
                         ForEach(PhoneKeyboardLayout.allCases, id: \.self) { Text($0.label).tag($0) }
@@ -280,7 +280,22 @@ private struct KeyboardReturnView: View {
                 Spacer()
             }
             Spacer()
-            if model.state.phase == .ready || model.state.phase == .listening {
+            if model.needsKeyboardMicrophoneSettings {
+                Image(systemName: "mic.slash").font(.system(size: 44))
+                Text("マイクの許可が必要です").font(.title2.bold())
+                Text("「オトナの音声入力 こえのたね」の設定で「マイク」をオンにしてください。")
+                Button("設定を開く") { Task { await model.openDeviceSettings() } }
+                    .buttonStyle(.borderedProminent)
+            } else if !model.modelReady {
+                Image(systemName: "waveform").font(.system(size: 44))
+                Text("日本語の音声認識を準備").font(.title2.bold())
+                Text("初回だけ、日本語モデルをダウンロードします。")
+                if model.downloading { ProgressView("準備中…") }
+                else {
+                    Button("日本語モデルを準備") { Task { await model.prepareKeyboardModel() } }
+                        .buttonStyle(.borderedProminent)
+                }
+            } else if model.state.phase == .ready || model.state.phase == .listening {
                 VStack(spacing: 10) {
                     ForEach(0..<3, id: \.self) { _ in
                         HStack(spacing: 6) {
@@ -304,7 +319,7 @@ private struct KeyboardReturnView: View {
                 Text("スワイプしてアプリに戻る").font(.title.bold()).multilineTextAlignment(.center)
                 Text("画面下のバーを右にスワイプして、\n使っていたアプリへ戻ってください。")
                     .font(.subheadline).multilineTextAlignment(.center).foregroundStyle(.secondary)
-                Text("戻ったら、そのまま話せます。")
+                Text(model.state.keyboardLaunch != nil || model.state.phase == .listening ? "戻ったら、そのまま話せます。" : "戻ったら、キーボードのマイクをタップしてください。")
                     .font(.headline).multilineTextAlignment(.center)
             } else if !model.errorMessage.isEmpty {
                 Text(model.errorMessage).multilineTextAlignment(.center)

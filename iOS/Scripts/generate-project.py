@@ -36,10 +36,10 @@ files += sorted(p.relative_to(ROOT).as_posix() for p in (ROOT / "Keyboard").glob
 microphone_level = "../Sources/MicrophoneLevel.swift"
 files.append(microphone_level)
 headers = sorted(p.relative_to(ROOT).as_posix() for p in (ROOT / "Keyboard").glob("*.h"))
-resources = ["Assets.xcassets", "THIRD_PARTY_NOTICES.txt", "Config/PrivacyInfo.xcprivacy"]
+resources = ["Assets.xcassets", "Settings.bundle", "THIRD_PARTY_NOTICES.txt", "Config/PrivacyInfo.xcprivacy"]
 references = {}
 for file in files + headers + resources + ["Config/Project.xcconfig", "Config/App-Info.plist", "Config/Keyboard-Info.plist", "Config/App.entitlements", "Config/Keyboard.entitlements"]:
-    kind = "sourcecode.swift" if file.endswith(".swift") else "sourcecode.c.objc" if file.endswith(".m") else "sourcecode.c.h" if file.endswith(".h") else "folder.assetcatalog" if file.endswith(".xcassets") else "text.xcconfig" if file.endswith(".xcconfig") else "text.plist.xml" if file.endswith((".plist", ".entitlements", ".xcprivacy")) else "text"
+    kind = "sourcecode.swift" if file.endswith(".swift") else "sourcecode.c.objc" if file.endswith(".m") else "sourcecode.c.h" if file.endswith(".h") else "folder.assetcatalog" if file.endswith(".xcassets") else "text.xcconfig" if file.endswith(".xcconfig") else "wrapper.cfbundle" if file.endswith(".bundle") else "text.plist.xml" if file.endswith((".plist", ".entitlements", ".xcprivacy")) else "text"
     references[file] = add("ref:" + file, "isa = PBXFileReference; lastKnownFileType = " + kind + "; path = " + quoted(file) + "; sourceTree = SOURCE_ROOT;")
 package = add("azookey-package", 'isa = XCRemoteSwiftPackageReference; repositoryURL = "https://github.com/azooKey/AzooKeyKanaKanjiConverter"; requirement = { kind = exactVersion; version = 0.11.2; };')
 product = add("azookey-product", "isa = XCSwiftPackageProductDependency; package = " + package + "; productName = KanaKanjiConverterModuleWithDefaultDictionary;")
@@ -80,7 +80,7 @@ for target in ["App", "Keyboard"]:
               "PRODUCT_MODULE_NAME": "VoiceSeedApp" if target == "App" else "VoiceSeedKeyboard",
               "PRODUCT_NAME": "こえのたね" if target == "App" else "VoiceSeedKeyboard",
               "INFOPLIST_FILE": "Config/" + target + "-Info.plist", "CODE_SIGN_ENTITLEMENTS": "Config/" + target + ".entitlements",
-              "CURRENT_PROJECT_VERSION": "35", "MARKETING_VERSION": "0.2.1",
+              "CURRENT_PROJECT_VERSION": "36", "MARKETING_VERSION": "0.2.1",
               "LD_RUNPATH_SEARCH_PATHS": ["$(inherited)", "@executable_path/Frameworks", "@executable_path/../../Frameworks"]}
     if target == "App": values["ASSETCATALOG_COMPILER_APPICON_NAME"] = "AppIcon"
     else: values.update({"APPLICATION_EXTENSION_API_ONLY": "YES", "SKIP_INSTALL": "YES",

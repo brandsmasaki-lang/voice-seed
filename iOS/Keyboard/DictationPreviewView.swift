@@ -34,7 +34,7 @@ final class DictationPreviewView: UIScrollView, UIScrollViewDelegate {
         alwaysBounceVertical = false
         showsHorizontalScrollIndicator = false
         delegate = self
-        backgroundColor = .secondarySystemGroupedBackground
+        backgroundColor = KeyboardPalette.paper
         layer.cornerRadius = 8
         label.numberOfLines = 0
         label.font = .preferredFont(forTextStyle: .body, compatibleWith: traitCollection)
@@ -52,7 +52,7 @@ final class DictationPreviewView: UIScrollView, UIScrollViewDelegate {
         showingPreview = isPreview
         label.text = value
         label.font = isPreview ? .dictationPreview(compatibleWith: traitCollection) : .preferredFont(forTextStyle: .body, compatibleWith: traitCollection)
-        label.textColor = isPreview ? .label : .secondaryLabel
+        label.textColor = isPreview ? KeyboardPalette.ink : KeyboardPalette.secondaryInk
         label.accessibilityValue = value
         if !isPreview || startsPreview { followsTail = true }
         pendingTop = !isPreview

@@ -14,6 +14,7 @@ import UIKit
     @Published var selectedTab = 0
     @Published var showSetup = false
     @Published var showKeyboardReturn = false
+    @Published private(set) var needsKeyboardMicrophoneSettings = false
     private var store: SharedSessionStore?
     private let microphone = MicrophoneSession()
     private var prepared: OnDeviceCapture?
@@ -87,6 +88,8 @@ import UIKit
         guard let route = VoiceSeedLink(url: url) else { return }
         switch route {
         case .settings: selectedTab = 4
+        case .keyboardSettings:
+            Task { await openDeviceSettings() }
         case .dictate(let ticket):
             isForeground = true
             pendingKeyboardTicket = ticket
@@ -107,10 +110,39 @@ import UIKit
             }
             pendingKeyboardTicket = nil
             guard let launch else { return }
-            selectedTab = 0; showKeyboardReturn = true
+            selectedTab = 0
+            showSetup = false
+            showKeyboardReturn = true
+            needsKeyboardMicrophoneSettings = false
+            if !synthetic {
+                switch AVAudioApplication.shared.recordPermission {
+                case .denied:
+                    needsKeyboardMicrophoneSettings = true
+                    await openDeviceSettings()
+                    return
+                case .undetermined:
+                    let allowed = await AVAudioApplication.requestRecordPermission()
+                    guard showKeyboardReturn else { return }
+                    if !allowed { needsKeyboardMicrophoneSettings = true; return }
+                default: break
+                }
+            }
+            guard modelReady else { return }
             await activate()
             if state.phase == .ready { try update { $0.keyboardLaunch = launch } }
         } catch { errorMessage = error.localizedDescription }
+    }
+
+    func openDeviceSettings() async {
+        guard let url = URL(string: UIApplication.openSettingsURLString) else { return }
+        if !(await UIApplication.shared.open(url)) {
+            errorMessage = "設定アプリの「アプリ」から「オトナの音声入力 こえのたね」を開いてください。"
+        }
+    }
+
+    func prepareKeyboardModel() async {
+        await installModel()
+        if modelReady && showKeyboardReturn { await activate() }
     }
 
     private func reload() throws { if let store { state = try store.read() } }
@@ -118,6 +150,11 @@ import UIKit
         IOSPreparationTrace.step("scene." + String(describing: phase))
         guard phase != .inactive else { return }
         isForeground = phase == .active
+        if isForeground, showKeyboardReturn, needsKeyboardMicrophoneSettings,
+           AVAudioApplication.shared.recordPermission == .granted {
+            needsKeyboardMicrophoneSettings = false
+            if modelReady { Task { await activate() } }
+        }
         try? update { $0.hostIsForeground = isForeground }
     }
     private func update(_ body: (inout SessionSnapshot) throws -> Void) throws {
@@ -368,6 +405,7 @@ import UIKit
     }
 
     func disconnect(message: String = "") {
+        needsKeyboardMicrophoneSettings = false
         showKeyboardReturn = false
         generation = UUID(); finishing?.cancel(); finishing = nil
         microphone.attach(nil); active?.cancel(); prepared?.cancel(); active = nil; prepared = nil

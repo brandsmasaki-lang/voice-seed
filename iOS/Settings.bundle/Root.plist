@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>PreferenceSpecifiers</key>
+    <array>
+        <dict>
+            <key>Type</key>
+            <string>PSGroupSpecifier</string>
+            <key>Title</key>
+            <string>キーボードで音声入力</string>
+            <key>FooterText</key>
+            <string>「キーボード」で「フルアクセスを許可」をオンにしてください。録音には「マイク」の許可も必要です。</string>
+        </dict>
+    </array>
+</dict>
+</plist>

@@ -29,7 +29,7 @@ cat > "$voice_seed_preview_app/Info.plist" <<PLIST
 PLIST
 voice_seed_preview_sdk=$(xcrun --sdk iphonesimulator --show-sdk-path)
 xcrun --sdk iphonesimulator swiftc -sdk "$voice_seed_preview_sdk" -target "$(uname -m)-apple-ios26.0-simulator" -parse-as-library \
-  "${voice_seed_layout_sources[@]}" -o "$voice_seed_preview_app/PreviewLayoutQA"
+  Keyboard/KeyboardPalette.swift "${voice_seed_layout_sources[@]}" -o "$voice_seed_preview_app/PreviewLayoutQA"
 codesign --force --sign - "$voice_seed_preview_app"
 xcrun simctl install "$voice_seed_preview_device" "$voice_seed_preview_app"
 voice_seed_preview_data=$(xcrun simctl get_app_container "$voice_seed_preview_device" "$voice_seed_layout_id" data)

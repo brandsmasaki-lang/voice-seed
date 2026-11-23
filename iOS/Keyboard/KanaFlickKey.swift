@@ -16,12 +16,12 @@ import UIKit
         self.legend = legend ?? values[0]
         self.detail = detail ?? values.dropFirst().joined(separator: " ")
         super.init(frame: .zero)
-        backgroundColor = .secondarySystemGroupedBackground
+        backgroundColor = KeyboardPalette.paper
         layer.cornerRadius = 7
         label.text = self.legend; label.font = .systemFont(ofSize: self.legend.count > 3 ? 18 : 24, weight: .medium)
-        label.textAlignment = .center; label.textColor = .label
+        label.textAlignment = .center; label.textColor = KeyboardPalette.ink
         hint.text = self.detail
-        hint.font = .systemFont(ofSize: detail == nil ? 8 : 11); hint.textAlignment = .center; hint.textColor = .secondaryLabel
+        hint.font = .systemFont(ofSize: detail == nil ? 8 : 11); hint.textAlignment = .center; hint.textColor = KeyboardPalette.secondaryInk
         let stack = UIStackView(arrangedSubviews: [label, hint]); stack.axis = .vertical; stack.spacing = 0
         stack.isUserInteractionEnabled = false; stack.translatesAutoresizingMaskIntoConstraints = false
         addSubview(stack)
@@ -33,7 +33,7 @@ import UIKit
     required init?(coder: NSCoder) { fatalError("init(coder:) is not used") }
     override func beginTracking(_ touch: UITouch, with event: UIEvent?) -> Bool {
         origin = touch.location(in: self); selectedIndex = 0
-        backgroundColor = .systemGray3; return true
+        backgroundColor = KeyboardPalette.control; return true
     }
     override func continueTracking(_ touch: UITouch, with event: UIEvent?) -> Bool {
         selectedIndex = index(at: touch.location(in: self))
@@ -52,6 +52,6 @@ import UIKit
     }
     private func reset() {
         label.text = legend; hint.text = detail
-        backgroundColor = .secondarySystemGroupedBackground
+        backgroundColor = KeyboardPalette.paper
     }
 }

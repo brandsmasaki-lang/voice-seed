@@ -16,6 +16,8 @@ import Foundation
         expect(String(digits) == "1234567890", "digits stay in telephone order")
         let oldSettings = try JSONDecoder().decode(LocalSettings.self, from: JSONEncoder().encode(LocalSettings()))
         expect(oldSettings.phoneKeyboardLayout == nil, "settings without a phone layout still decode")
+        expect(VoiceSeedLink(url: VoiceSeedLink.keyboardSettingsURL) == .keyboardSettings, "settings handoff needs no shared activation ticket")
+        expect(VoiceSeedLink(url: URL(string: "koenotane://keyboard-settings?url=elsewhere")!) == nil, "settings handoff is a fixed destination")
         let now = Date()
         var state = SessionSnapshot(); state.activate(at: now); state.phase = .ready
         expect(state.isLive(at: now), "fresh heartbeat")

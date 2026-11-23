@@ -13,7 +13,7 @@ FIXTURES = ("Tests/Fixtures/aqua-example.json", "Tests/Fixtures/atok-example.txt
 IOS_FIXED = (
     "iOS/Keyboard/KeyboardDocumentAccess.m", "iOS/Keyboard/KeyboardDocumentAccess.h",
     "iOS/Keyboard/VoiceSeedKeyboard-Bridging-Header.h", "iOS/Tests/KeyboardDocumentAccessTests.m",
-    "iOS/Package.swift", "iOS/README.md", "iOS/THIRD_PARTY_NOTICES.txt",
+    "iOS/Settings.bundle/Root.plist", "iOS/Package.swift", "iOS/README.md", "iOS/THIRD_PARTY_NOTICES.txt",
     "iOS/VoiceSeed.xcodeproj/project.pbxproj",
     "iOS/VoiceSeed.xcodeproj/xcshareddata/xcschemes/VoiceSeed-iOS.xcscheme",
     "iOS/Assets.xcassets/Contents.json",

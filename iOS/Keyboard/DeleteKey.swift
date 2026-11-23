@@ -10,8 +10,8 @@ import UIKit
 
     override init(frame: CGRect) {
         super.init(frame: frame)
-        backgroundColor = .systemGray3; layer.cornerRadius = 7
-        icon.tintColor = .label; icon.contentMode = .scaleAspectFit; icon.translatesAutoresizingMaskIntoConstraints = false
+        backgroundColor = KeyboardPalette.control; layer.cornerRadius = 7
+        icon.tintColor = KeyboardPalette.ink; icon.contentMode = .scaleAspectFit; icon.translatesAutoresizingMaskIntoConstraints = false
         addSubview(icon)
         NSLayoutConstraint.activate([icon.centerXAnchor.constraint(equalTo: centerXAnchor), icon.centerYAnchor.constraint(equalTo: centerYAnchor), icon.widthAnchor.constraint(equalToConstant: 24), icon.heightAnchor.constraint(equalToConstant: 22)])
         isAccessibilityElement = true; accessibilityTraits = .keyboardKey

@@ -10,10 +10,11 @@ app = products / "こえのたね.app"
 extension = app / "PlugIns/VoiceSeedKeyboard.appex"
 app_info = plistlib.loads((app / "Info.plist").read_bytes())
 keyboard_info = plistlib.loads((extension / "Info.plist").read_bytes())
+assert plistlib.loads((app / "Settings.bundle/Root.plist").read_bytes())["PreferenceSpecifiers"]
 assert (app / app_info["CFBundleExecutable"]).is_file()
 assert (extension / keyboard_info["CFBundleExecutable"]).is_file()
 assert app_info["CFBundleShortVersionString"] == keyboard_info["CFBundleShortVersionString"] == "0.2.1"
-assert app_info["CFBundleVersion"] == keyboard_info["CFBundleVersion"] == "35"
+assert app_info["CFBundleVersion"] == keyboard_info["CFBundleVersion"] == "36"
 assert app_info["CFBundleDisplayName"] == keyboard_info["CFBundleDisplayName"] == "オトナの音声入力 こえのたね"
 assert app_info["UIDeviceFamily"] == [1, 2]
 assert keyboard_info["UIDeviceFamily"] == [1, 2]
