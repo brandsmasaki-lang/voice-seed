@@ -257,6 +257,7 @@ final class KeyboardViewController: UIInputViewController {
         toolbar.addArrangedSubview(hideButton)
         // Keep the dismiss action at the screen edge even when iPad keys are narrow or left-aligned.
         let toolbarRow = UIView()
+        if !isTablet { root.addArrangedSubview(previewColumn) }
         root.addArrangedSubview(toolbarRow)
         toolbar.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(toolbar)
@@ -272,11 +273,11 @@ final class KeyboardViewController: UIInputViewController {
         panes.axis = .vertical; panes.spacing = 6
         previewColumn.axis = .vertical; previewColumn.spacing = 6
         keysColumn.axis = .vertical
-        panes.addArrangedSubview(previewColumn)
+        if isTablet { panes.addArrangedSubview(previewColumn) }
         panes.addArrangedSubview(keysColumn)
         if !isTablet {
             configurePhoneVoicePane()
-            panes.insertArrangedSubview(voicePane, at: 0)
+            panes.addArrangedSubview(voicePane)
             panes.addArrangedSubview(voiceReturnRow)
             keysColumn.isHidden = true
         }
@@ -287,7 +288,6 @@ final class KeyboardViewController: UIInputViewController {
         reviewHint.textColor = KeyboardPalette.ink
         reviewHint.setContentHuggingPriority(.required, for: .vertical)
         reviewHint.isHidden = true
-        previewColumn.addArrangedSubview(reviewHint)
         let previewArea = UIView()
         for item: UIView in [notice, correctionStrip] {
             item.translatesAutoresizingMaskIntoConstraints = false
@@ -307,6 +307,7 @@ final class KeyboardViewController: UIInputViewController {
         notice.accessibilityIdentifier = "dictation-preview"
         notice.accessibilityLabel = "認識プレビュー"
         previewColumn.addArrangedSubview(previewArea)
+        previewColumn.insertArrangedSubview(reviewHint, at: isTablet ? 0 : 1)
         candidates.axis = .horizontal; candidates.spacing = 8
         candidateScroll.addSubview(candidates); candidates.translatesAutoresizingMaskIntoConstraints = false
         NSLayoutConstraint.activate([
