@@ -100,12 +100,13 @@ enum SpeechService {
 
     static var canRefine: Bool { SystemLanguageModel.default.availability == .available }
 
-    static func refine(_ text: String, using generate: (String) async throws -> String = generateRefinement) async throws -> String {
+    static func refine(_ text: String, dictionary: [DictionaryEntry] = [],
+                       using generate: (String) async throws -> String = generateRefinement) async throws -> String {
         try Task.checkCancellation()
         do {
             let candidate = try await generate(text).trimmingCharacters(in: .whitespacesAndNewlines)
             try Task.checkCancellation()
-            return TextPipeline.acceptsRefinement(original: text, candidate: candidate) ? candidate : text
+            return TextPipeline.acceptsRefinement(original: text, candidate: candidate, dictionary: dictionary) ? candidate : text
         } catch is CancellationError {
             throw CancellationError()
         } catch {

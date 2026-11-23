@@ -12,3 +12,8 @@ swiftc -target arm64-apple-macosx26.0 -swift-version 5 -parse-as-library \
     -module-cache-path "$PWD/.build/module-cache" "${sources[@]}" \
     Tests/AppStartupIntegrationTests.swift -o .build/AppStartupIntegrationTests
 .build/AppStartupIntegrationTests
+# Exercise the same recording and result-presentation policy in the sandbox build variant.
+swiftc -target arm64-apple-macosx26.0 -swift-version 5 -parse-as-library -D APP_STORE \
+    -module-cache-path "$PWD/.build/module-cache" "${sources[@]}" \
+    Tests/AppStartupIntegrationTests.swift -o .build/AppStoreStartupIntegrationTests
+.build/AppStoreStartupIntegrationTests

@@ -6,6 +6,24 @@ import CoreFoundation
         func parse(_ text: String, _ file: String = "test.txt", _ source: DictionaryImportSource = .atok, _ encoding: String.Encoding = .utf8) throws -> DictionaryImportPreview {
             try DictionaryImporter.parse(data: text.data(using: encoding)!, fileName: file, source: source, existing: [])
         }
+        var system = [DictionaryEntry(heard: "はし", written: "橋")]
+        let shortcuts = [(" さいとう ", "齋藤"), ("さいとう", "齋藤"), ("はし", "箸"), ("山田", "山田"), ("", "語")]
+        let importMessage = try DictionaryImporter.importSystemReplacements(shortcuts, into: &system)
+        precondition(system.count == 2 && system[0].written == "橋" && system[1].written == "齋藤" && importMessage.contains("1件追加"))
+        _ = try DictionaryImporter.importSystemReplacements(shortcuts, into: &system)
+        precondition(system.count == 2)
+        _ = try DictionaryImporter.importSystemReplacements([("あめ", "飴"), ("あめ", "雨")], into: &system)
+        precondition(system.count == 2)
+        do {
+            _ = try DictionaryImporter.importSystemReplacements([("ひと", "一"), ("ふた", "二")], into: &system, limit: 3)
+            preconditionFailure("Capacity error expected")
+        } catch is DictionaryImportError { precondition(system.count == 2) }
+        for format: PropertyListSerialization.PropertyListFormat in [.binary, .xml] {
+            let rows = [["shortcut": "やまだ", "phrase": "山田"], ["phrase": "単独語"]]
+            let plist = try PropertyListSerialization.data(fromPropertyList: rows, format: format, options: 0)
+            let preview = try DictionaryImporter.parse(data: plist, fileName: "ユーザ辞書.plist", source: .apple, existing: system)
+            precondition(preview.additions.first?.written == "山田" && preview.additions.count == 1 && preview.skipped == 1)
+        }
         let atok = try parse("!!ATOK_TANGO_TEXT_HEADER_1\nよみ\t単語\t品詞\nぷろんぷとばんく\tPromptBank\t名詞\nえーあい\tAI\t名詞\n")
         precondition(atok.additions.count == 2 && atok.additions[0].heard == "ぷろんぷとばんく")
         let unicode = try parse("かいぎ\t会議\t名詞", "unicode.txt", .atok, .utf16)

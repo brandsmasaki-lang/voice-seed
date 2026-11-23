@@ -32,6 +32,35 @@ struct FnKeyState {
     }
 }
 
+/// Tracks transitions between modifier snapshots. A key pressed between two
+/// snapshots cancels the hold even when Fn was released in the same interval.
+struct SampledFnHold {
+    private var previousFn: Bool?
+    private var previousKeyDownCount: UInt32?
+    private(set) var recording = false
+
+    mutating func sample(fn: Bool, otherModifier: Bool, keyDownCount: UInt32,
+                         secureInput: Bool, typingEndedBeforeFn: @autoclosure () -> Bool = false) -> FnKeyState.Action? {
+        defer { previousFn = fn; previousKeyDownCount = keyDownCount }
+        guard let previousFn else { return nil }
+        let chord = otherModifier || previousKeyDownCount != keyDownCount
+        if recording && (chord || secureInput) {
+            recording = false
+            return .keyboardChord
+        }
+        if recording && !fn {
+            recording = false
+            return .released
+        }
+        if fn && !previousFn && !otherModifier && !secureInput,
+           previousKeyDownCount == keyDownCount || typingEndedBeforeFn() {
+            recording = true
+            return .pressed
+        }
+        return nil
+    }
+}
+
 /// A release during asynchronous microphone permission must cancel preparation,
 /// rather than let recording start after the user has released Fn.
 struct HoldRecordingState {

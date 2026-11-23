@@ -30,6 +30,18 @@ import FoundationModels
             check(altered == draft, "Rejected formatting preserves numbers")
             let formatted = try await SpeechService.refine(draft, using: { _ in "明日は15時に、3名で伺います。" })
             check(formatted == "明日は15時に、3名で伺います。", "Valid formatting is used")
+            let entries = [DictionaryEntry(heard: "声の種", written: "こえのたね")]
+            let corrected = TextPipeline.process("今日は声の種を使います", entries: entries, removeFillers: true)
+            let demoResult = try await SpeechService.refine(corrected, dictionary: entries) { _ in "今日は音紋を使います。" }
+            check(demoResult == "今日はこえのたねを使います", "A paraphrase cannot overwrite a dictionary correction")
+            let punctuated = try await SpeechService.refine(corrected, dictionary: entries) { _ in "今日は、こえのたねを使います。" }
+            check(punctuated == "今日は、こえのたねを使います。", "Preserving dictionary spellings still allows formatting")
+            let hint = [DictionaryEntry(heard: "", written: "こえのたね", kind: .vocabulary)]
+            let repeated = "こえのたねで、こえのたねを紹介します。"
+            let partialLoss = try await SpeechService.refine(repeated, dictionary: hint) { _ in "こえのたねで、音紋を紹介します。" }
+            check(partialLoss == repeated, "Every occurrence of a recognized vocabulary hint is protected")
+            let unrelated = try await SpeechService.refine("今日は花の種をまきます", dictionary: hint) { _ in "今日は、花の種をまきます。" }
+            check(unrelated == "今日は、花の種をまきます。", "An unused hint is not inserted into unrelated text")
             do {
                 _ = try await SpeechService.refine(draft, using: { _ in throw CancellationError() })
                 check(false, "Cancellation must propagate")

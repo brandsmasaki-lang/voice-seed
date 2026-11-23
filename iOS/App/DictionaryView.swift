@@ -43,12 +43,15 @@ struct DictionaryView: View {
             } header: { Text("優先する変換候補") } footer: {
                 Text("タップして読みや表記を変更できます。左にスワイプすると削除できます。")
             }
+            Section("この端末のユーザ辞書") {
+                Text("こえのたねキーボードの設定ボタンから「端末のユーザ辞書を取り込む」を選ぶと、読みと表記の組を追加できます。")
+            }
             Section("ほかの端末やアプリから辞書を移す") {
                 Picker("ファイルの形式", selection: $source) {
                     ForEach(DictionaryImportSource.allCases) { Text($0.rawValue).tag($0) }
                 }
                 Button("辞書ファイルを選ぶ") { importing = true }
-                Text("ATOKやAqua Voiceから自分で書き出したTXT・CSV・TSV・JSONを取り込めます。").font(.caption).foregroundStyle(.secondary)
+                Text("Macの「ユーザ辞書.plist」や、ATOK・Aqua VoiceのTXT・CSV・TSV・JSONを取り込めます。").font(.caption).foregroundStyle(.secondary)
             }
             Section("ほかの端末へ辞書を渡す") {
                 ShareLink(item: exportFile, preview: SharePreview("こえのたね辞書")) {

@@ -51,13 +51,9 @@ final class IOSAudioStreamPump: @unchecked Sendable {
             }
             #endif
             do {
-                if let samples = copy.floatChannelData?[0], copy.frameLength > 0 {
-                    var sum: Float = 0
-                    for i in 0..<Int(copy.frameLength) { sum += samples[i] * samples[i] }
-                    let db = 20 * log10(max(0.000001, sqrt(Double(sum) / Double(copy.frameLength))))
-                    diagnostics.peakLevel = max(diagnostics.peakLevel, max(0, min(1, (db + 60) / 60)))
-                    onLevel?(max(0, min(1, (db + 60) / 60)))
-                }
+                let level = MicrophoneLevel.measure(copy)
+                diagnostics.peakLevel = max(diagnostics.peakLevel, level)
+                onLevel?(level)
                 if copy.format == target { try yield(copy); return }
                 if converter == nil {
                     converter = AVAudioConverter(from: copy.format, to: target)

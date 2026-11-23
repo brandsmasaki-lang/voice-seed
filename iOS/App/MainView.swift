@@ -54,7 +54,13 @@ private struct DictationHome: View {
                     }
                 }
                 VStack(spacing: 14) {
-                    Text(model.state.phase.label).font(.headline)
+                    HStack(spacing: 8) {
+                        Text(model.state.phase.label).font(.headline)
+                        if model.state.phase == .listening {
+                            ProgressView(value: model.state.level).progressViewStyle(.linear)
+                                .frame(width: 64).accessibilityLabel("マイク入力レベル")
+                        }
+                    }
                     Button {
                         switch model.state.phase {
                         case .inactive, .failed: Task { await model.activate() }

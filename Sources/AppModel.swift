@@ -115,6 +115,31 @@ enum RecordingPhase: String {
     }
     var canAutomaticallyPaste: Bool { autoPaste && pasteReady }
 
+    #if APP_STORE
+    private var waitingForPasteSettings = false
+    private var visitedPasteSettings = false
+
+    // A process which requested PostEvent can keep its old permission until
+    // relaunched. On the first setup visit, refresh the app once on return.
+    private func finishFirstPasteSetup(granted: Bool) {
+        guard waitingForPasteSettings else { return }
+        if granted {
+            waitingForPasteSettings = false
+            return
+        }
+        guard let front = NSWorkspace.shared.frontmostApplication else { return }
+        if front.bundleIdentifier == "com.apple.systempreferences" {
+            visitedPasteSettings = true
+            return
+        }
+        guard visitedPasteSettings, front.activationPolicy == .regular,
+              !busy, !installing, !readingDictionary, pendingDictionaryImport == nil,
+              output.isEmpty, original.isEmpty, microphoneStatus != .notDetermined else { return }
+        waitingForPasteSettings = false
+        relaunch(activate: front.processIdentifier == ProcessInfo.processInfo.processIdentifier)
+    }
+    #endif
+
     func refreshInputPermissions() {
         if shortcut == 3, let hotkey {
             hotkeyStatus = hotkey.refreshModifierShortcut(choice: shortcut) ? "" : "Control＋Commandには\(InputAccess.listenPermissionName)の許可が必要です。"
@@ -134,6 +159,9 @@ enum RecordingPhase: String {
         if fnEnabled { canDetectFn = fnMonitor?.start() ?? false }
         else { fnMonitor?.stop(); canDetectFn = false }
         if fnReady != canDetectFn { fnReady = canDetectFn }
+        #if APP_STORE
+        finishFirstPasteSetup(granted: canPaste)
+        #endif
     }
 
     func requestFnPermission() {
@@ -141,17 +169,22 @@ enum RecordingPhase: String {
         // the IOHID request registers it there reliably.
         _ = IOHIDRequestAccess(kIOHIDRequestTypeListenEvent)
         _ = CGRequestListenEventAccess()
-        NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_ListenEvent")!)
+        openInputPrivacySettings("Privacy_ListenEvent")
         refreshInputPermissions()
+    }
+
+    private func openInputPrivacySettings(_ pane: String) {
+        let modern = URL(string: "x-apple.systempreferences:com.apple.settings.PrivacySecurity.extension?\(pane)")!
+        if !NSWorkspace.shared.open(modern) {
+            NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?\(pane)")!)
+        }
     }
 
     /// Removes this app's stale Accessibility and Input Monitoring records, then asks again.
     /// Without this the user must know to delete the entry with "−" and add it back by hand.
     func redoPermissions() {
         #if APP_STORE
-        fnMonitor?.stop()
-        requestFnPermission()
-        requestAccessibility()
+        if autoPaste { requestAccessibility() } else { requestFnPermission() }
         #else
         let bundleID = Bundle.main.bundleIdentifier ?? "jp.ainotane.voice-seed"
         for service in ["Accessibility", "ListenEvent"] {
@@ -168,10 +201,12 @@ enum RecordingPhase: String {
         #endif
     }
 
-    func relaunch() {
+    func relaunch(activate: Bool = true) {
         let configuration = NSWorkspace.OpenConfiguration()
         configuration.createsNewApplicationInstance = true
-        NSWorkspace.shared.openApplication(at: Bundle.main.bundleURL, configuration: configuration) { _, _ in
+        configuration.activates = activate
+        NSWorkspace.shared.openApplication(at: Bundle.main.bundleURL, configuration: configuration) { newApp, _ in
+            guard let newApp, newApp.processIdentifier != ProcessInfo.processInfo.processIdentifier else { return }
             DispatchQueue.main.async { NSApp.terminate(nil) }
         }
     }
@@ -247,7 +282,7 @@ enum RecordingPhase: String {
 
     private func prewarm() {
         guard modelReady, !busy, warmTask == nil else { return }
-        let vocabulary = dictionary.map(\.written)
+        let vocabulary = TextPipeline.recognitionVocabulary(dictionary)
         warmTask = Task { try await StreamingSpeechSession.prepare(vocabulary: vocabulary) }
     }
 
@@ -329,7 +364,7 @@ enum RecordingPhase: String {
 
         let pending = warmTask
         warmTask = nil
-        let vocabulary = activeEntries.map(\.written)
+        let vocabulary = TextPipeline.recognitionVocabulary(activeEntries)
         analysisTask = Task { [self] in
             do {
                 let session: StreamingSpeechSession
@@ -420,7 +455,7 @@ enum RecordingPhase: String {
                 }
                 if useLLM {
                     phase = .refining
-                    do { output = try await SpeechService.refine(output) }
+                    do { output = try await SpeechService.refine(output, dictionary: entries) }
                     catch { notice = "文章整形: \(error.localizedDescription) 認識結果を確認してください。" }
                 }
                 try Task.checkCancellation()
@@ -527,7 +562,13 @@ enum RecordingPhase: String {
 
     func requestAccessibility() {
         #if APP_STORE
+        waitingForPasteSettings = !InputAccess.canPaste
+        visitedPasteSettings = false
+        _ = IOHIDRequestAccess(kIOHIDRequestTypePostEvent)
         _ = CGRequestPostEventAccess()
+        // PostEvent is sandbox-compatible and appears under Accessibility in System Settings.
+        // A previously dismissed TCC prompt is not shown again, so always provide the settings route.
+        openInputPrivacySettings("Privacy_Accessibility")
         #else
         let key = kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String
         _ = AXIsProcessTrustedWithOptions([key: true] as CFDictionary)
@@ -611,13 +652,13 @@ enum RecordingPhase: String {
         work = Task {
             defer { phase = .idle; work = nil }
             do {
-                let recognized = try await SpeechService.transcribe(file: url, vocabulary: entries.map(\.written))
+                let recognized = try await SpeechService.transcribe(file: url, vocabulary: TextPipeline.recognitionVocabulary(entries))
                 original = recognized
                 output = TextPipeline.process(recognized, entries: entries, removeFillers: removeFillers)
                 notice = "音声ファイルを文字起こししました。"
                 if refineText {
                     phase = .refining
-                    do { output = try await SpeechService.refine(output) }
+                    do { output = try await SpeechService.refine(output, dictionary: entries) }
                     catch { notice = "文章整形: \(error.localizedDescription)" }
                 }
                 recordActivity(text: output, application: "音声ファイル", inputSeconds: nil)
@@ -656,10 +697,19 @@ enum RecordingPhase: String {
         if let data = try? JSONEncoder().encode(dictionary) { UserDefaults.standard.set(data, forKey: "dictionary") }
     }
 
+    func importSystemDictionary() {
+        let replacements = NSSpellChecker.shared.userReplacementsDictionary
+        var merged = dictionary
+        do {
+            notice = try DictionaryImporter.importSystemReplacements(replacements.map { ($0.key, $0.value) }, into: &merged)
+            if merged.count != dictionary.count { dictionary = merged }
+        } catch { notice = error.localizedDescription }
+    }
+
     func chooseDictionary(source: DictionaryImportSource) {
         guard !busy, !readingDictionary else { return }
         let panel = NSOpenPanel()
-        panel.allowedContentTypes = [.plainText, .commaSeparatedText, .tabSeparatedText, .json, .text]
+        panel.allowedContentTypes = source == .apple ? [.propertyList] : [.plainText, .commaSeparatedText, .tabSeparatedText, .json, .text]
         panel.allowsMultipleSelection = false
         panel.message = "\(source.rawValue)から書き出したファイルを選んでください。確認画面ではまだ登録されません。"
         guard let window = NSApp.windows.first(where: { $0.identifier?.rawValue == "main" || $0.title == "こえのたね" }) else { return }

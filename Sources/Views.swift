@@ -209,22 +209,21 @@ struct InputSetupView: View {
             // Input Monitoring is only requested when paste is off or Accessibility alone was not enough.
             let needsAccessibility = model.autoPaste && !model.pasteReady
             if model.autoPaste {
-                statusRow(done: model.pasteReady, title: model.fnEnabled && needsAccessibility && !AppDistribution.isAppStore ? "Fnキーの検知・自動貼り付け" : "自動貼り付け",
+                statusRow(done: model.pasteReady, title: model.fnEnabled && needsAccessibility ? "Fnキーの検知・自動貼り付け" : "自動貼り付け",
                           pending: "\(InputAccess.pastePermissionName)の許可が必要", button: "許可する") { model.requestAccessibility() }
             }
-            if model.fnEnabled && (!needsAccessibility || AppDistribution.isAppStore) {
+            if model.fnEnabled && !needsAccessibility {
                 statusRow(done: model.fnReady, title: "Fnキーの検知", pending: "入力監視の許可が必要",
                           button: "入力監視を設定する") { model.requestFnPermission() }
             }
             if (model.fnEnabled && !model.fnReady) || needsAccessibility {
                 VStack(alignment: .leading, spacing: 6) {
                     if AppDistribution.isAppStore {
-                        Text("入力監視とイベント送信は別の許可です。各「許可する」ボタンからmacOSの案内に従ってください。許可後に反映されない場合は、アプリを開き直して準備状況を再確認してください。")
+                        Text(model.autoPaste
+                             ? "「許可する」を押して「こえのたね」をオンにしたら、入力先に戻ってください。初回は、許可を反映するため自動でアプリが開き直ることがあります。"
+                             : "「入力監視を設定する」を押し、開いた設定で「こえのたね」をオンにしてください。")
                             .fixedSize(horizontal: false, vertical: true)
-                        HStack {
-                            Button("許可を再申請する") { model.redoPermissions() }
-                            Button("こえのたねを開き直す") { model.relaunch() }
-                        }
+                        Button("こえのたねを開き直す") { model.relaunch() }
                     } else if model.permissionsNeedRedo {
                         Label("アプリを更新したため、許可のやり直しが必要です", systemImage: "exclamationmark.triangle.fill")
                             .font(.system(size: 12, weight: .semibold)).foregroundStyle(.orange)
@@ -248,7 +247,7 @@ struct InputSetupView: View {
                 Button("準備状況を再確認") { Task { await model.refresh(); model.refreshInputPermissions() } }
                     .disabled(model.installing || model.busy)
                 Spacer()
-                Link("設定で困ったとき", destination: URL(string: "https://ai-no-tane.com/lp/koenotane/#troubleshooting")!)
+                SettingsHelpLink()
             }
         }.font(.system(size: 11)).padding(14).background(.white, in: RoundedRectangle(cornerRadius: 12))
     }
@@ -449,6 +448,9 @@ struct DictionaryView: View {
                 Button("辞書を書き出す") { model.exportDictionary() }.disabled(model.dictionary.isEmpty)
                     .help("iPhone版や別のMacへ移すためのファイルを保存します")
             }
+            Button("Macのユーザ辞書を取り込む") { model.importSystemDictionary() }
+                .disabled(model.busy || model.readingDictionary)
+                .help("Macのテキスト置換に登録した読みと表記を追加します")
             Text("名前や専門用語の表記を登録できます。認識のヒントと、認識後の置換に使います。")
                 .font(.system(size: 12)).foregroundStyle(.secondary)
             HStack {
@@ -490,10 +492,16 @@ struct DictionaryView: View {
                     ContentUnavailableView("単語を登録しましょう", systemImage: "character.book.closed", description: Text("登録した単語は、このMacだけに保存されます。"))
                 }
             }
-            Text("部分一致で置き換えます。短すぎる単語は意図しない置換につながるため、固有名詞などを登録してください。")
+            Text("読みがかな1〜2文字のときは、単語の区切りに合う場合だけ置き換えます。")
                 .font(.system(size: 10)).foregroundStyle(.secondary)
         }.padding(.horizontal, 32).padding(.bottom, 24)
             .sheet(item: $model.pendingDictionaryImport) { preview in DictionaryImportView(model: model, preview: preview) }
+    }
+}
+
+private struct SettingsHelpLink: View {
+    var body: some View {
+        Link("設定で困ったとき", destination: URL(string: "https://ai-no-tane.com/lp/koenotane/#troubleshooting")!)
     }
 }
 
@@ -503,6 +511,7 @@ struct SettingsView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
                 Text("心地よい入力のために。").font(.system(size: 25, weight: .semibold))
+                SettingsHelpLink()
                 card("Fnを押して話す → 離して入力", icon: "keyboard") {
                     Toggle("Fn / 🌐 キーを押している間だけ音声入力する", isOn: $model.fnEnabled).font(.system(size: 12)).disabled(model.busy)
                     Text("入力したい欄をクリックし、Fnを押しながら話してください。離すと文字起こしして、その欄へ自動で貼り付けます。")
@@ -510,7 +519,9 @@ struct SettingsView: View {
                     HStack {
                         Label(model.fnReady ? "① Fnキーの検知：準備完了" : "① Fnキーの検知：許可が必要", systemImage: model.fnReady ? "checkmark.circle.fill" : "circle")
                         Spacer()
-                        Button("入力監視の設定を開く") { model.requestFnPermission() }
+                        if !AppDistribution.isAppStore || (!model.autoPaste && !model.fnReady) {
+                            Button("入力監視の設定を開く") { model.requestFnPermission() }
+                        }
                     }.font(.system(size: 11))
                     HStack {
                         Label(model.pasteReady ? "② 自動貼り付け：許可済み" : "② 自動貼り付け：許可が必要", systemImage: model.pasteReady ? "checkmark.circle.fill" : "circle")

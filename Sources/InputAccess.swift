@@ -1,4 +1,5 @@
 import ApplicationServices
+import Foundation
 
 enum AppDistribution {
     static var isAppStore: Bool {
@@ -28,7 +29,12 @@ enum InputAccess {
     }
 
     static var pastePermissionName: String {
-        AppDistribution.isAppStore ? "イベント送信" : "アクセシビリティ"
+        let version = ProcessInfo.processInfo.operatingSystemVersion
+        if version.majorVersion == 27 && version.minorVersion < 3 {
+            return "デバイスの制御とデータへのアクセス"
+        }
+        if version.majorVersion >= 27 { return "システム設定での自動貼り付け" }
+        return "アクセシビリティ"
     }
 
     static var listenPermissionName: String {

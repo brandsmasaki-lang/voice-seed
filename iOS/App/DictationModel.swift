@@ -213,7 +213,7 @@ import UIKit
     }
 
     private func makePrepared() async throws -> OnDeviceCapture {
-        try await OnDeviceCapture.prepare(vocabulary: state.settings.dictionary.flatMap { [$0.heard, $0.written] })
+        try await OnDeviceCapture.prepare(vocabulary: TextPipeline.recognitionVocabulary(state.settings.dictionary, includingReadings: true))
     }
 
     func startLocal(benchmark: BenchmarkPhrase? = nil) {
@@ -246,8 +246,8 @@ import UIKit
                 }
             }
             capture.onLevel = { [weak self] level in
-                guard let self, self.state.request?.id == request.id else { return }
-                if abs(level - self.state.level) > 0.08 { try? self.update { $0.level = level } }
+                guard let self, self.state.phase == .listening, self.state.request?.id == request.id else { return }
+                if abs(level - self.state.level) > 0.08 || (level == 0 && self.state.level != 0) { try? self.update { $0.level = level } }
             }
             capture.onFailure = { [weak self] _ in
                 guard let self, self.state.request?.id == request.id, self.state.phase == .listening else { return }
@@ -295,7 +295,8 @@ import UIKit
                 IOSPreparationTrace.step("recognition.finished.characters=" + String(raw.count))
                 let finalized = Date()
                 guard !Task.isCancelled, self.generation == token, self.state.request?.id == request.id else { return }
-                var text = TextPipeline.process(raw, entries: self.state.settings.dictionary, removeFillers: self.state.settings.removeFillers)
+                let dictionary = self.state.settings.dictionary
+                var text = TextPipeline.process(raw, entries: dictionary, removeFillers: self.state.settings.removeFillers)
                 let refinementStart = Date()
                 var refined = false
                 #if DEBUG && targetEnvironment(simulator)
@@ -304,9 +305,11 @@ import UIKit
                 }
                 #endif
                 if self.state.settings.refineWithAppleIntelligence, OnDeviceRefiner.available, !text.isEmpty {
-                    let candidate = (try? await OnDeviceRefiner.refine(text)) ?? text
+                    let candidate = try? await OnDeviceRefiner.refine(text)
                     guard !Task.isCancelled, self.state.request?.id == request.id else { return }
-                    text = TextPipeline.applyDictionary(candidate, entries: self.state.settings.dictionary); refined = true
+                    if let candidate, TextPipeline.acceptsRefinement(original: text, candidate: candidate, dictionary: dictionary) {
+                        text = candidate; refined = true
+                    }
                 }
                 let finished = Date()
                 let metrics = DictationMetrics(speechSeconds: max(0, request.stoppedAt!.timeIntervalSince(request.startedAt)),

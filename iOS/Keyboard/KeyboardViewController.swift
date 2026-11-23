@@ -13,9 +13,14 @@ private struct ActivateKeyboardButton: View {
     }
 }
 private struct KeyboardSettingsButton: View {
+    let importDictionary: () -> Void
     var body: some View {
-        Link(destination: URL(string: "koenotane://settings")!) { Image(systemName: "slider.horizontal.3").font(.system(size: 18)).padding(8).contentShape(Rectangle()) }
-            .buttonStyle(.plain).foregroundStyle(.primary)
+        Menu {
+            Link("こえのたねの設定を開く", destination: URL(string: "koenotane://settings")!)
+            Button("端末のユーザ辞書を取り込む", action: importDictionary)
+        } label: {
+            Image(systemName: "slider.horizontal.3").font(.system(size: 18)).padding(8).contentShape(Rectangle())
+        }.buttonStyle(.plain).foregroundStyle(.primary).accessibilityLabel("キーボード設定")
     }
 }
 
@@ -35,6 +40,8 @@ final class KeyboardViewController: UIInputViewController {
     private let candidateScroll = UIScrollView()
     private let bodyStack = UIStackView()
     private let bottomBar = UIStackView()
+    private var meterStep: Int?
+    private var dictionaryImportNotice: (message: String, until: Date)?
     private let speechButton = UIButton(type: .system)
     private let reviewButton = UIButton(type: .system)
     private let pasteButton = UIButton(type: .system)
@@ -137,7 +144,8 @@ final class KeyboardViewController: UIInputViewController {
         cancelButton.showsMenuAsPrimaryAction = true
         cancelButton.widthAnchor.constraint(equalToConstant: 36).isActive = true
         toolbar.addArrangedSubview(cancelButton)
-        let settings = UIHostingController(rootView: KeyboardSettingsButton()); settingsHost = settings
+        let settings = UIHostingController(rootView: KeyboardSettingsButton { [weak self] in self?.importSystemDictionary() })
+        settingsHost = settings
         mount(settings, in: toolbar); settings.view.widthAnchor.constraint(equalToConstant: 36).isActive = true
         let activation = UIHostingController(rootView: ActivateKeyboardButton()); activationHost = activation
         mount(activation, in: toolbar)
@@ -377,6 +385,48 @@ final class KeyboardViewController: UIInputViewController {
         return VoiceSeedReadDocumentIdentifier(textDocumentProxy)?.uuidString
     }
 
+    private func importSystemDictionary() {
+        guard hasFullAccess else { refresh(); return }
+        requestSupplementaryLexicon { [weak self] lexicon in
+            let pairs = lexicon.entries.map { ($0.userInput, $0.documentText) }
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                let message: String
+                do {
+                    let container = try AppGroupContainer.open()
+                    message = try container.update { state in
+                        try DictionaryImporter.importSystemReplacements(pairs, into: &state.settings.dictionary, limit: 2000)
+                    }
+                } catch { message = error.localizedDescription }
+                self.dictionaryImportNotice = (message, Date().addingTimeInterval(7))
+                self.refresh()
+                UIAccessibility.post(notification: .announcement, argument: message)
+            }
+        }
+    }
+
+    private func showMicrophoneLevel(_ level: Double?) {
+        let step = level.map { Int((max(0, min(1, $0)) * 10).rounded()) }
+        guard step != meterStep else { return }
+        meterStep = step
+        guard let step else {
+            speechButton.setImage(nil, for: .normal)
+            speechButton.accessibilityValue = nil
+            return
+        }
+        let image = UIGraphicsImageRenderer(size: CGSize(width: 24, height: 18)).image { _ in
+            UIColor.black.setFill()
+            for index in 0..<5 {
+                let peak = CGFloat(15 - 4 * abs(2 - index))
+                let height = 2 + peak * CGFloat(step) / 10
+                let bar = CGRect(x: CGFloat(index * 4), y: (18 - height) / 2, width: 2.5, height: height)
+                UIBezierPath(roundedRect: bar, cornerRadius: 1.25).fill()
+            }
+        }
+        speechButton.setImage(image.withRenderingMode(.alwaysOriginal), for: .normal)
+        speechButton.accessibilityValue = "マイク入力レベル \(step * 10)パーセント"
+    }
+
     private func refresh() {
         guard isVisible else { return }
         updatePreviewLayout()
@@ -492,6 +542,7 @@ final class KeyboardViewController: UIInputViewController {
             case .ready: label = "🎙 タップして話す"
             default: label = snapshot.phase.label
             }
+            showMicrophoneLevel(snapshot.phase == .listening ? snapshot.level : nil)
             speechButton.setTitle(label, for: .normal)
             speechButton.backgroundColor = snapshot.phase == .listening ? .systemGreen : .label
             speechButton.setTitleColor(snapshot.phase == .listening ? .black : .systemBackground, for: .normal)
@@ -504,7 +555,10 @@ final class KeyboardViewController: UIInputViewController {
                 notice.display(manualEdit.committed + composer.reading, isPreview: true)
                 finishReplacement.isEnabled = !manualEdit.committed.isEmpty || !composer.isEmpty
             }
-            else { notice.display(previewText, isPreview: showingPreview) }
+            else if let result = dictionaryImportNotice, result.until > Date(), !showingPreview,
+                    !hasDraft, pending == nil, [.inactive, .ready, .failed].contains(snapshot.phase) {
+                notice.display(result.message, isPreview: false)
+            } else { notice.display(previewText, isPreview: showingPreview) }
             let capturing = !hasDraft && (pending != nil || snapshot.phase == .listening || snapshot.phase == .processing)
             correctionStrip.isHidden = correction == nil || showingPreview || capturing || !composer.isEmpty || manualEdit != nil
             notice.isHidden = !correctionStrip.isHidden

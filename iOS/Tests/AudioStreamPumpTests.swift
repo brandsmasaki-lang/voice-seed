@@ -40,8 +40,23 @@ import Speech
             precondition(abs(frames - Int(0.4 * rate)) < 64, "Sample rate conversion lost audio")
             let diagnostics = await pump.inputDiagnostics()
             precondition(diagnostics.buffers == 4 && diagnostics.frames == 19_200)
-            if sourceType == .pcmFormatFloat32 { precondition(diagnostics.peakLevel > 0.7) }
+            precondition(diagnostics.peakLevel > 0.7)
         }
+        for interleaved in [false, true] {
+            let format = AVAudioFormat(commonFormat: .pcmFormatInt16, sampleRate: 48000, channels: 2, interleaved: interleaved)!
+            let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: 512)!
+            buffer.frameLength = 512
+            var levels: [Double] = []
+            for volume: Int16 in [0, 320, 16000, 0] {
+                for frame in 0..<512 {
+                    buffer.int16ChannelData![0][frame * buffer.stride] = 0
+                    buffer.int16ChannelData![1][frame * buffer.stride] = volume
+                }
+                levels.append(MicrophoneLevel.measure(buffer))
+            }
+            precondition(levels[0] == 0 && levels[1] > 0 && levels[2] > levels[1] && levels[3] == 0)
+        }
+        print("PASS: microphone meter follows silence, soft and loud PCM, including stereo and integer input")
         try await testQuestionTiming()
         print("PASS: audio buffer ownership and 48kHz/16kHz conversion; synthetic samples only")
     }

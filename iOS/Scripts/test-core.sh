@@ -17,8 +17,8 @@ swiftc -target arm64-apple-macosx26.0 -module-cache-path "$PWD/.build/module-cac
   -o .build/SharedDictionaryImporterTests
 .build/SharedDictionaryImporterTests
 swiftc -target arm64-apple-macosx26.0 -module-cache-path "$PWD/.build/module-cache" \
-  -parse-as-library -typecheck Core/*.swift App/AudioStreamPump.swift App/OnDeviceSpeech.swift
+  -parse-as-library -typecheck Core/*.swift ../Sources/MicrophoneLevel.swift App/AudioStreamPump.swift App/OnDeviceSpeech.swift
 swiftc -target arm64-apple-macosx26.0 -module-cache-path "$PWD/.build/module-cache" \
-  -parse-as-library Core/*.swift App/AudioStreamPump.swift App/OnDeviceSpeech.swift \
+  -parse-as-library Core/*.swift ../Sources/MicrophoneLevel.swift App/AudioStreamPump.swift App/OnDeviceSpeech.swift \
   Tests/AudioStreamPumpTests.swift -o .build/AudioStreamPumpTests
 .build/AudioStreamPumpTests

@@ -21,6 +21,27 @@ import Foundation
         precondition(DictionaryCorrection.apply(heard: "何か", written: "  ", to: &list) == .invalid && list.count == 2)
         let exported = try! JSONSerialization.jsonObject(with: DictionaryCorrection.exportData(list)) as! [String: [[String: String]]]
         precondition(exported["entries"]!.count == 2 && exported["entries"]!.contains { $0["kind"] == "vocabulary" && $0["written"] == "Aqua Voice" }, "Export keeps hints and replacements apart")
-        print("PASS: 16 text pipeline checks")
+        let dai = DictionaryEntry(heard: "だい", written: "DAI")
+        for (spoken, expected) in [
+            ("だいです", "DAIです"), ("だい", "DAI"), ("だいぶ大切です", "だいぶ大切です"),
+            ("だいこん", "だいこん"), ("たいせつ", "たいせつ"), ("だいせつ", "だいせつ"),
+            ("DAI切な予定", "大切な予定"), ("だい切にします", "大切にします"),
+            ("DAIを切る", "DAIを切る"), ("myDAI切", "myDAI切"), ("DAI切り替え", "DAI切り替え"),
+            ("Appマンとゲット版は一緒？", "App版とGit版は一緒？"),
+            ("Appバンドギフトバンは一緒", "App版とGit版は一緒"),
+            ("バックバンドBIGBANGは一緒ですか？", "バックバンドBIGBANGは一緒ですか？"),
+            ("App版とギット版", "App版とGit版"), ("ゲットした", "ゲットした"),
+            ("別のアプリとゲット版", "別のアプリとゲット版")
+        ] {
+            precondition(TextPipeline.process(spoken, entries: [dai], removeFillers: false) == expected, spoken)
+        }
+        precondition(TextPipeline.applyDictionary("DAI切", entries: []) == "DAI切")
+        precondition(TextPipeline.applyDictionary("DAI切", entries: [dai, .init(heard: "DAI切", written: "登録表記")]) == "登録表記")
+        precondition(TextPipeline.recognitionVocabulary([dai], includingReadings: true).isEmpty)
+        precondition(TextPipeline.recognitionVocabulary([dai, .init(heard: "", written: "DAI", kind: .vocabulary)]) == ["DAI"])
+        precondition(!TextPipeline.acceptsRefinement(original: "DAIです", candidate: "台です", dictionary: [dai]))
+        precondition(!TextPipeline.acceptsRefinement(original: "大切です", candidate: "DAI切です", dictionary: [dai]))
+        precondition(!TextPipeline.acceptsRefinement(original: "App版とGit版は一緒？", candidate: "Appマンとゲット版は一緒？"))
+        print("PASS: dictionary matching, recognition hints, edition names and refinement")
     }
 }

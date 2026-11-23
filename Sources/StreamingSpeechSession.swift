@@ -118,12 +118,7 @@ private final class AudioStreamPump: @unchecked Sendable {
         queue.async { [self] in
             guard !closed else { return }
             do {
-                if let samples = copy.floatChannelData?[0], copy.frameLength > 0 {
-                    var sum: Float = 0
-                    for i in 0..<Int(copy.frameLength) { sum += samples[i] * samples[i] }
-                    let db = 20 * log10(max(0.000001, sqrt(Double(sum) / Double(copy.frameLength))))
-                    onLevel?(max(0, min(1, (db + 60) / 60)))
-                }
+                onLevel?(MicrophoneLevel.measure(copy))
                 if copy.format == target { try yield(copy); return }
                 if converter == nil {
                     converter = AVAudioConverter(from: copy.format, to: target)

@@ -2,6 +2,7 @@ import Foundation
 import CoreFoundation
 
 enum DictionaryImportSource: String, CaseIterable, Identifiable, Sendable {
+    case apple = "Appleのユーザ辞書（plist）"
     case atok = "ATOK"
     case aquaWords = "Aqua Voiceの単語辞書"
     case aquaReplacements = "Aqua Voiceの置換辞書"
@@ -30,6 +31,32 @@ enum DictionaryImporter {
     static let maximumBytes = 10 * 1024 * 1024
     static let maximumEntries = 50_000
 
+    // System lexicons may also contain common words and names with no shortcut.
+    static func importSystemReplacements(_ pairs: [(String, String)], into entries: inout [DictionaryEntry],
+                                         limit: Int = maximumEntries) throws -> String {
+        let candidates = systemEntries(pairs)
+        guard !candidates.isEmpty else { return "取り込める読みと表記が見つかりませんでした。" }
+        let preview = plan(candidates: candidates, existing: entries)
+        let additions = preview.additions.filter { !$0.isVocabulary }
+        guard additions.isEmpty || entries.count + additions.count <= limit else {
+            throw DictionaryImportError.invalid("取り込むと辞書の上限（\(limit)件）を超えます。")
+        }
+        entries.append(contentsOf: additions)
+        var message = additions.isEmpty ? "新しく追加する単語はありません。" : "辞書に\(additions.count)件追加しました。"
+        if preview.conflicts > 0 { message += "同じ読みで表記が異なる\(preview.conflicts)件は見送りました。" }
+        return message
+    }
+
+    private static func systemEntries(_ pairs: [(String, String)]) -> [DictionaryEntry] {
+        pairs.compactMap { source, target -> DictionaryEntry? in
+            let heard = source.trimmingCharacters(in: .whitespacesAndNewlines)
+            let written = target.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !heard.isEmpty, !written.isEmpty, heard != written,
+                  heard.count <= 1024, written.count <= 4096 else { return nil }
+            return DictionaryEntry(heard: heard, written: written)
+        }.sorted { ($0.heard, $0.written) < ($1.heard, $1.written) }
+    }
+
     static func read(url: URL, source: DictionaryImportSource, existing: [DictionaryEntry]) throws -> DictionaryImportPreview {
         let size = try url.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? 0
         guard size <= maximumBytes else { throw DictionaryImportError.invalid("辞書ファイルは10MB以下にしてください。") }
@@ -39,6 +66,20 @@ enum DictionaryImporter {
 
     static func parse(data: Data, fileName: String, source: DictionaryImportSource, existing: [DictionaryEntry]) throws -> DictionaryImportPreview {
         guard data.count <= maximumBytes else { throw DictionaryImportError.invalid("辞書ファイルは10MB以下にしてください。") }
+        if source == .apple || fileName.lowercased().hasSuffix(".plist") {
+            guard let rows = (try? PropertyListSerialization.propertyList(from: data, format: nil)) as? [[String: Any]],
+                  rows.count <= maximumEntries else {
+                throw DictionaryImportError.invalid("Appleのユーザ辞書から書き出したplistファイルを選んでください。")
+            }
+            let pairs = rows.compactMap { row -> (String, String)? in
+                guard let heard = row["shortcut"] as? String, let written = row["phrase"] as? String else { return nil }
+                return (heard, written)
+            }
+            let entries = systemEntries(pairs)
+            guard !entries.isEmpty else { throw DictionaryImportError.invalid("読みと表記の組が見つかりませんでした。") }
+            return plan(candidates: entries, existing: existing, fileName: fileName, encoding: "Apple plist",
+                        skipped: rows.count - entries.count)
+        }
         let (text, encoding) = try decode(data)
         var candidates: [DictionaryEntry] = []
         var skipped = 0

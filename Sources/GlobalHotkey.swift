@@ -11,10 +11,60 @@ import ApplicationServices
     var onRelease: (() -> Void)?
     var onInterrupted: (() -> Void)?
     var onKeyboardChord: (() -> Void)?
-    var running: Bool { tap != nil }
+    #if APP_STORE
+    private var modifierTimer: Timer?
+    private var sampledHold = SampledFnHold()
+
+    // A completed keystroke before the Fn transition is not an Fn chord.
+    // Only aggregate event ages are needed; no key code or text is read.
+    private func typingEndedBeforeFn() -> Bool {
+        let flagsAge = CGEventSource.secondsSinceLastEventType(.combinedSessionState, eventType: .flagsChanged)
+        let upAge = CGEventSource.secondsSinceLastEventType(.combinedSessionState, eventType: .keyUp)
+        let downAge = CGEventSource.secondsSinceLastEventType(.combinedSessionState, eventType: .keyDown)
+        return flagsAge < upAge && upAge < downAge
+    }
+
+    private func sampleModifiers() {
+        let flags = CGEventSource.flagsState(.combinedSessionState)
+        let fn = flags.contains(.maskSecondaryFn)
+        let action = sampledHold.sample(
+            fn: fn,
+            otherModifier: !flags.intersection([.maskCommand, .maskShift, .maskControl, .maskAlternate]).isEmpty,
+            keyDownCount: CGEventSource.counterForEventType(.combinedSessionState, eventType: .keyDown),
+            secureInput: (fn || sampledHold.recording) && IsSecureEventInputEnabled(),
+            typingEndedBeforeFn: typingEndedBeforeFn())
+        switch action {
+        case .pressed: onPress?()
+        case .released: onRelease?()
+        case .keyboardChord: onKeyboardChord?()
+        case nil: break
+        }
+    }
+    #endif
 
     @discardableResult func start() -> Bool {
-        if let tap { return CGEvent.tapIsEnabled(tap: tap) }
+        #if APP_STORE
+        // PostEvent authorizes pasting. Fn is a modifier; observing its public
+        // state needs no keyboard event stream. The counter contains no key data.
+        if InputAccess.canPaste {
+            if modifierTimer == nil {
+                if tap != nil { stop() }
+                sampleModifiers() // Establish a baseline; never start on an already-held Fn.
+                let timer = Timer(timeInterval: 1.0 / 30, repeats: true) { [weak self] _ in
+                    MainActor.assumeIsolated { self?.sampleModifiers() }
+                }
+                timer.tolerance = 0.005
+                RunLoop.main.add(timer, forMode: .common)
+                modifierTimer = timer
+            }
+            return true
+        }
+        if modifierTimer != nil { stop() }
+        #endif
+        if let tap {
+            if CGEvent.tapIsEnabled(tap: tap) { return true }
+            stop() // Discard the stale port and establish a fresh event stream.
+        }
         // Do not trigger an OS permission prompt on launch; the setup button does that.
         guard InputAccess.canListen else { return false }
         let mask = (CGEventMask(1) << CGEventType.flagsChanged.rawValue) | (CGEventMask(1) << CGEventType.keyDown.rawValue)
@@ -57,6 +107,12 @@ import ApplicationServices
     }
 
     func stop() {
+        #if APP_STORE
+        modifierTimer?.invalidate()
+        modifierTimer = nil
+        if sampledHold.recording { onInterrupted?() }
+        sampledHold = SampledFnHold()
+        #endif
         if state.reset() { onInterrupted?() }
         if let source { CFRunLoopRemoveSource(CFRunLoopGetMain(), source, .commonModes) }
         if let tap { CFMachPortInvalidate(tap) }
@@ -195,7 +251,16 @@ struct HUDView: View {
                 }.padding(.horizontal, 12).padding(.vertical, 8).frame(width: 420, height: 54)
             } else {
                 HStack(spacing: 12) {
-                    if model.phase == .recording { Image(systemName: "waveform").foregroundStyle(Color.mint) }
+                    if model.phase == .recording {
+                        HStack(spacing: 2) {
+                            ForEach(0..<5) { index in
+                                let peak = CGFloat(22 - 5 * abs(2 - index))
+                                Capsule().fill(Color.mint).frame(width: 3, height: 3 + peak * model.level)
+                            }
+                        }.frame(width: 25, height: 26)
+                            .accessibilityLabel("マイク入力レベル")
+                            .accessibilityValue(Text("\(Int(model.level * 100))パーセント"))
+                    }
                     else { ProgressView().controlSize(.small) }
                     VStack(alignment: .leading, spacing: 3) {
                         Text(model.phase == .recording ? "聞き取り中  \(model.duration)" : model.phase.title).font(.system(size: 13, weight: .semibold))

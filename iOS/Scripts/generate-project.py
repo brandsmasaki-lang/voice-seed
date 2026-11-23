@@ -33,6 +33,8 @@ def config_list(name, values, base=None):
 
 files = sorted([p.relative_to(ROOT).as_posix() for folder in ["Core", "Shared", "App", "Keyboard"] for p in (ROOT / folder).glob("*.swift")])
 files += sorted(p.relative_to(ROOT).as_posix() for p in (ROOT / "Keyboard").glob("*.m"))
+microphone_level = "../Sources/MicrophoneLevel.swift"
+files.append(microphone_level)
 headers = sorted(p.relative_to(ROOT).as_posix() for p in (ROOT / "Keyboard").glob("*.h"))
 resources = ["Assets.xcassets", "THIRD_PARTY_NOTICES.txt", "Config/PrivacyInfo.xcprivacy"]
 references = {}
@@ -59,6 +61,8 @@ project_config = config_list("project", {
 
 for target in ["App", "Keyboard"]:
     sources = [f for f in files if f.startswith(("Core/", "Shared/", target + "/"))]
+    if target == "App":
+        sources.append(microphone_level)
     builds = [add(target + ":" + f, "isa = PBXBuildFile; fileRef = " + references[f] + ";") for f in sources]
     source_phase = add(target + "sources", "isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = " + listing(builds) + "; runOnlyForDeploymentPostprocessing = 0;")
     resource_builds = [add(target + ":resource:" + f, "isa = PBXBuildFile; fileRef = " + references[f] + ";") for f in resources if target == "App" or f.endswith((".txt", ".xcprivacy"))]
