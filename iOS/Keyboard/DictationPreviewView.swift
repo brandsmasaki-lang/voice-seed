@@ -14,6 +14,10 @@ final class DictationPreviewView: UIScrollView, UIScrollViewDelegate {
     private var followsTail = true
     private var pendingTail = false
     private var pendingTop = true
+    private var dragStartedAtTop = false
+    var onSwipeDownFromTop: (() -> Void)? {
+        didSet { alwaysBounceVertical = onSwipeDownFromTop != nil }
+    }
 
     var text: String {
         get { label.text ?? "" }
@@ -31,7 +35,7 @@ final class DictationPreviewView: UIScrollView, UIScrollViewDelegate {
         bottomEdgeEffect.isHidden = true
         leftEdgeEffect.isHidden = true
         rightEdgeEffect.isHidden = true
-        alwaysBounceVertical = false
+        panGestureRecognizer.addTarget(self, action: #selector(handlePreviewDrag(_:)))
         showsHorizontalScrollIndicator = false
         delegate = self
         backgroundColor = KeyboardPalette.paper
@@ -74,6 +78,23 @@ final class DictationPreviewView: UIScrollView, UIScrollViewDelegate {
         pendingTop = false; pendingTail = false
         if abs(contentOffset.y - y) > 0.5 || contentOffset.x != 0 {
             setContentOffset(CGPoint(x: 0, y: y), animated: false)
+        }
+    }
+
+    @objc private func handlePreviewDrag(_ pan: UIPanGestureRecognizer) {
+        switch pan.state {
+        case .began:
+            dragStartedAtTop = contentOffset.y <= -adjustedContentInset.top + 1
+        case .ended:
+            let delta = pan.translation(in: superview)
+            if dragStartedAtTop && delta.y >= 40 && delta.y > 1.5 * abs(delta.x) {
+                onSwipeDownFromTop?()
+            }
+            dragStartedAtTop = false
+        case .cancelled, .failed:
+            dragStartedAtTop = false
+        default:
+            break
         }
     }
 

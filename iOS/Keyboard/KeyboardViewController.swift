@@ -246,14 +246,8 @@ final class KeyboardViewController: UIInputViewController {
         hideButton.configuration = hideStyle
         hideButton.accessibilityLabel = "キーボードをしまう"
         hideButton.setContentCompressionResistancePriority(.required, for: .horizontal)
-        hideButton.addAction(UIAction { [weak self] _ in
-            guard let self else { return }
-            draftInsertion = nil
-            endManualReading()
-            commit()
-            cancelPending()
-            dismissKeyboard()
-        }, for: .touchUpInside)
+        hideButton.addAction(UIAction { [weak self] _ in self?.hideKeyboard() }, for: .touchUpInside)
+        notice.onSwipeDownFromTop = { [weak self] in self?.hideKeyboard() }
         toolbar.addArrangedSubview(hideButton)
         // Keep the dismiss action at the screen edge even when iPad keys are narrow or left-aligned.
         let toolbarRow = UIView()
@@ -394,6 +388,14 @@ final class KeyboardViewController: UIInputViewController {
         buildKeys()
         updateLayoutPreferences()
         updatePreviewLayout()
+    }
+
+    private func hideKeyboard() {
+        draftInsertion = nil
+        endManualReading()
+        commit()
+        cancelPending()
+        dismissKeyboard()
     }
 
     private func configurePhoneVoicePane() {
