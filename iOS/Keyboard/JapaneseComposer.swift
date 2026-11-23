@@ -5,6 +5,7 @@ import KanaKanjiConverterModuleWithDefaultDictionary
     private lazy var converter = KanaKanjiConverter.withDefaultDictionary()
     private(set) var reading = ""
     private(set) var candidates: [String] = []
+    var convertsReading = true
     var dictionary: [DictionaryEntry] = []
     var isEmpty: Bool { reading.isEmpty }
 
@@ -21,7 +22,7 @@ import KanaKanjiConverterModuleWithDefaultDictionary
     }
     func clear() { reading = ""; candidates = [] }
     private func refresh() {
-        candidates = conversions(for: reading)
+        candidates = convertsReading ? conversions(for: reading) : []
     }
 
     func conversions(for reading: String) -> [String] {

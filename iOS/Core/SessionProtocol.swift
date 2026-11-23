@@ -103,6 +103,7 @@ struct LocalSettings: Codable, Equatable, Sendable {
         entries.insert(entry, at: 0)
         preferredCandidates = entries
     }
+    var phoneKeyboardLayout: PhoneKeyboardLayout?
     var tabletKeyboardSize: TabletKeyboardSize?
     var tabletKeyboardPosition: TabletKeyboardPosition?
 }

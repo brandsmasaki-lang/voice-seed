@@ -38,6 +38,8 @@ final class KeyboardViewController: UIInputViewController {
     private var sideBySide = false
     private let candidates = UIStackView()
     private let candidateScroll = UIScrollView()
+    private var activePhoneLayout: PhoneKeyboardLayout = .standard
+    private let modeKeys = UIStackView()
     private let bodyStack = UIStackView()
     private let bottomBar = UIStackView()
     private var meterStep: Int?
@@ -78,7 +80,7 @@ final class KeyboardViewController: UIInputViewController {
     private static let candidateRowHeight: CGFloat = 48
     private var keyboardHeight: NSLayoutConstraint!
     private let globe = UIButton(type: .system)
-    private let tabletLayoutButton = UIButton(type: .system)
+    private let layoutButton = UIButton(type: .system)
     private var rootMaximumWidth: NSLayoutConstraint!
     private var rootAlignment: NSLayoutConstraint!
     private var appliedTabletSize: TabletKeyboardSize?
@@ -250,17 +252,19 @@ final class KeyboardViewController: UIInputViewController {
         candidateHeight.priority = .defaultHigh; candidateHeight.isActive = true
         previewColumn.addArrangedSubview(candidateScroll)
         bodyStack.axis = .vertical; bodyStack.spacing = 5
-        let modeKeys = UIStackView(arrangedSubviews: [
+        for button in [
             key("あ", fontSize: 24) { [weak self] in self?.switchMode(.kana) },
             key("ABC", fontSize: 20) { [weak self] in self?.switchMode(.abc) },
             key("123", fontSize: 22) { [weak self] in self?.switchMode(.numbers) },
             key("😊", fontSize: 24) { [weak self] in self?.switchMode(.emoji) }
-        ])
+        ] { modeKeys.addArrangedSubview(button) }
         modeKeys.axis = .vertical
         modeKeys.spacing = 5
         modeKeys.distribution = .fillEqually
         modeKeys.accessibilityIdentifier = "keyboard-mode-switches"
-        modeKeys.widthAnchor.constraint(equalToConstant: 68).isActive = true
+        let modeWidth = modeKeys.widthAnchor.constraint(equalToConstant: 68)
+        modeWidth.priority = .defaultHigh
+        modeWidth.isActive = true
         keyArea.addArrangedSubview(modeKeys)
         keyArea.addArrangedSubview(bodyStack)
         keyArea.axis = .horizontal
@@ -306,17 +310,17 @@ final class KeyboardViewController: UIInputViewController {
         bottomBar.addArrangedSubview(undoButton)
         undoButton.isHidden = true
         bottomBar.addArrangedSubview(UIView())
-        tabletLayoutButton.setTitle("幅・位置", for: .normal)
-        tabletLayoutButton.setImage(UIImage(systemName: "slider.horizontal.3"), for: .normal)
-        tabletLayoutButton.titleLabel?.font = .systemFont(ofSize: 14, weight: .medium)
-        tabletLayoutButton.showsMenuAsPrimaryAction = true
-        tabletLayoutButton.accessibilityLabel = "キーボードの幅と位置を変更"
-        bottomBar.addArrangedSubview(tabletLayoutButton)
+        layoutButton.setTitle("幅・位置", for: .normal)
+        layoutButton.setImage(UIImage(systemName: "slider.horizontal.3"), for: .normal)
+        layoutButton.titleLabel?.font = .systemFont(ofSize: 14, weight: .medium)
+        layoutButton.showsMenuAsPrimaryAction = true
+        layoutButton.accessibilityLabel = "キーボードの幅と位置を変更"
+        bottomBar.addArrangedSubview(layoutButton)
         let bottomHeight = bottomBar.heightAnchor.constraint(equalToConstant: 44)
         bottomHeight.priority = .defaultHigh; bottomHeight.isActive = true
         root.addArrangedSubview(bottomBar)
         buildKeys()
-        updateTabletLayout()
+        updateLayoutPreferences()
         updatePreviewLayout()
     }
 
@@ -358,6 +362,11 @@ final class KeyboardViewController: UIInputViewController {
     override func viewDidAppear(_ animated: Bool) {
         super.viewDidAppear(animated)
         isVisible = true
+        if !isTablet && !hasFullAccess {
+            let storedLayout = UserDefaults.standard.string(forKey: "phoneKeyboardLayout") ?? ""
+            snapshot.settings.phoneKeyboardLayout = PhoneKeyboardLayout(rawValue: storedLayout)
+            updateLayoutPreferences()
+        }
         focusSettlesAt = ProcessInfo.processInfo.systemUptime + 0.2
         refresh()
     }
@@ -454,7 +463,7 @@ final class KeyboardViewController: UIInputViewController {
         if store == nil { store = try? AppGroupContainer.open() }
         do {
             if let store { snapshot = try store.read() }
-            updateTabletLayout()
+            updateLayoutPreferences()
             #if DEBUG
             if let launch = snapshot.keyboardLaunch, let store {
                 let trace = "visible=\(isVisible).settled=\(ProcessInfo.processInfo.systemUptime >= focusSettlesAt).foreground=\(snapshot.hostIsForeground == true).owner=\(launch.keyboardID == keyboardID).document=\(launch.documentID == document).phase=\(snapshot.phase.rawValue).pending=\(pending != nil)"
@@ -1080,6 +1089,13 @@ final class KeyboardViewController: UIInputViewController {
     }
     private func buildKeys() {
         clearStack(bodyStack)
+        let keypad = !isTablet && activePhoneLayout == .keypad
+        modeKeys.isHidden = keypad
+        composer.convertsReading = !keypad || mode == .kana
+        if keypad {
+            buildPhoneKeypad()
+            return
+        }
         switch mode {
         case .kana:
             let middle = UIStackView(); middle.axis = .vertical; middle.spacing = 5; middle.distribution = .fillEqually
@@ -1100,11 +1116,7 @@ final class KeyboardViewController: UIInputViewController {
                 right.arrangedSubviews[0].heightAnchor.constraint(equalToConstant: 45).isActive = true
                 space.heightAnchor.constraint(equalToConstant: 45).isActive = true
             } else {
-                let reverse = key("逆送り", fontSize: 17) { [weak self] in self?.reverseKana() }
-                reverse.accessibilityHint = "最後に入力したかなを、同じキーの一つ前の文字に戻します"
-                reverse.isEnabled = tapCycle.canReverse(composer.reading.last.map(String.init))
-                right.addArrangedSubview(reverse)
-                reverseButton = reverse
+                right.addArrangedSubview(previousCharacterKey())
                 right.distribution = .fillEqually
             }
             right.addArrangedSubview(key("改行") { [weak self] in self?.enter() })
@@ -1138,6 +1150,111 @@ final class KeyboardViewController: UIInputViewController {
             ])); bodyStack.distribution = .fillEqually
         }
     }
+    private func buildPhoneKeypad() {
+        let left = UIStackView()
+        let center = UIStackView()
+        let right = UIStackView()
+        for column in [left, center, right] {
+            column.axis = .vertical
+            column.spacing = 5
+        }
+        left.distribution = .fillEqually
+        center.distribution = .fillEqually
+        let back = key("←", fontSize: 23) { [weak self] in self?.moveCursor(-1) }
+        back.accessibilityLabel = "カーソルを左へ"
+        let reverse = previousCharacterKey()
+        let modes: [(Mode, String)] = [(.kana, "かな"), (.abc, "英字"), (.numbers, "数字")]
+        let modeKey = key("あA1", fontSize: 19) { [weak self] in
+            guard let self else { return }
+            switchMode(mode == .kana ? .abc : mode == .abc ? .numbers : .kana)
+        }
+        let selectedMode = modes.firstIndex { $0.0 == mode }
+        let legend = NSMutableAttributedString(string: "あA1", attributes: [.foregroundColor: UIColor.secondaryLabel])
+        if let selectedMode {
+            legend.addAttributes([.foregroundColor: UIColor.label, .font: UIFont.boldSystemFont(ofSize: 23)],
+                                 range: NSRange(location: selectedMode, length: 1))
+        }
+        modeKey.setAttributedTitle(legend, for: .normal)
+        modeKey.accessibilityLabel = "文字種の切り替え"
+        modeKey.accessibilityValue = selectedMode.map { modes[$0].1 } ?? "絵文字"
+        modeKey.accessibilityHint = "かな、英字、数字の順に切り替えます"
+        modeKey.menu = UIMenu(children: modes.map { option, title in
+            UIAction(title: title, state: option == mode ? .on : .off) { [weak self] _ in self?.switchMode(option) }
+        })
+        for button in [back, reverse, modeKey] { left.addArrangedSubview(button) }
+
+        let emoji = { [weak self] in self?.switchMode(.emoji) }
+        switch mode {
+        case .kana:
+            left.addArrangedSubview(key("゛゜小") { [weak self] in self?.alternate() })
+            for groups in KanaLayout.rows {
+                var buttons: [UIView] = []
+                for values in groups {
+                    if values == ["゛゜小"] {
+                        let smile = key("☺", fontSize: 26) { emoji() }
+                        smile.accessibilityLabel = "絵文字"
+                        buttons.append(smile)
+                    } else {
+                        let button = KanaFlickKey(values: values)
+                        button.onInput = { [weak self] in self?.typeKana(values: $0, index: $1) }
+                        buttons.append(button)
+                    }
+                }
+                center.addArrangedSubview(row(buttons))
+            }
+        case .abc, .numbers:
+            let latin = mode == .abc
+            if latin {
+                let shift = key(uppercase ? "A→a" : "a→A") { [weak self] in
+                    self?.commit()
+                    self?.uppercase.toggle()
+                    self?.buildKeys()
+                }
+                shift.accessibilityLabel = uppercase ? "小文字に切り替え" : "大文字に切り替え"
+                left.addArrangedSubview(shift)
+            } else {
+                left.addArrangedSubview(key("😊") { emoji() })
+            }
+            for groups in latin ? PhoneKeypad.latinRows : PhoneKeypad.numberRows {
+                center.addArrangedSubview(row(groups.map { group in
+                    let values = (latin && uppercase ? group.uppercased() : group).map(String.init)
+                    let digit = !latin && group.first?.isNumber == true
+                    let label = digit ? values[0] : group.uppercased()
+                    let hint = digit ? values.dropFirst().joined(separator: " ") : ""
+                    let button = KanaFlickKey(values: values, legend: label, detail: hint)
+                    if digit {
+                        button.accessibilityLabel = values[0] + "、フリックで" + values.dropFirst().joined(separator: "、")
+                    }
+                    button.onInput = { [weak self] values, index in
+                        if digit { self?.typeDirect(values[index]) }
+                        else { self?.typeKana(values: values, index: index) }
+                    }
+                    return button
+                }))
+            }
+        case .emoji:
+            left.addArrangedSubview(key("かな") { [weak self] in self?.switchMode(.kana) })
+            for group in ["😊😂🥰😅👍", "🙏🙇🎉✨❤️", "👀💡✅📩🌱"] {
+                center.addArrangedSubview(row(group.map { character in
+                    key(String(character), fontSize: 23) { [weak self] in self?.typeDirect(String(character)) }
+                }))
+            }
+        }
+        let delete = deleteKey()
+        let space = spaceButton("空白")
+        let enter = key("改行") { [weak self] in self?.enter() }
+        for item: UIView in [delete, space, enter] { right.addArrangedSubview(item) }
+        let grid = UIStackView(arrangedSubviews: [left, center, right])
+        grid.spacing = 5
+        grid.accessibilityIdentifier = "phone-tenkey-grid"
+        bodyStack.addArrangedSubview(grid)
+        NSLayoutConstraint.activate([
+            left.widthAnchor.constraint(equalTo: grid.widthAnchor, multiplier: 0.2, constant: -4),
+            right.widthAnchor.constraint(equalTo: left.widthAnchor),
+            delete.heightAnchor.constraint(equalTo: back.heightAnchor),
+            space.heightAnchor.constraint(equalTo: back.heightAnchor)
+        ])
+    }
     private func switchMode(_ next: Mode) {
         guard mode != next else { return }
         commit()
@@ -1155,6 +1272,15 @@ final class KeyboardViewController: UIInputViewController {
         }
         setMarked(); updateCandidates()
     }
+    private func previousCharacterKey() -> UIButton {
+        let button = key("↶", fontSize: 28) { [weak self] in self?.reverseKana() }
+        button.accessibilityLabel = mode == .kana ? "前のかなに戻す" : "前の文字に戻す"
+        button.accessibilityHint = mode == .kana ? "例えば「う」を「い」に戻します" : "同じキーの一つ前の文字に戻します"
+        button.isEnabled = tapCycle.canReverse(composer.reading.last.map(String.init))
+        reverseButton = button
+        return button
+    }
+
     private func reverseKana() {
         guard let edit = tapCycle.reverse(currentLast: composer.reading.last.map(String.init),
                                           at: ProcessInfo.processInfo.systemUptime) else { return }
@@ -1230,7 +1356,7 @@ final class KeyboardViewController: UIInputViewController {
             inserting = false
         }
     }
-    private func enter() { cancelPending(); if !composer.isEmpty { commit() } else { typeDirect("\n") } }
+    private func enter() { cancelPending(); if composer.convertsReading && !composer.isEmpty { commit() } else { typeDirect("\n") } }
     private func moveCursor(_ delta: Int) {
         guard manualEdit == nil, editingCorrection == nil else { return }
         if let highlightedRange, let correction {
@@ -1249,7 +1375,7 @@ final class KeyboardViewController: UIInputViewController {
     private func spaceButton(_ title: String) -> UIButton {
         let button = key(title) { [weak self] in
             guard let self else { return }; self.cancelPending()
-            if !self.composer.isEmpty { self.commit(self.composer.candidates.first) } else { self.typeDirect(" ") }
+            if self.composer.convertsReading && !self.composer.isEmpty { self.commit(self.composer.candidates.first) } else { self.typeDirect(" ") }
         }
         button.addGestureRecognizer(UILongPressGestureRecognizer(target: self, action: #selector(spaceTrackpad(_:))))
         return button
@@ -1266,7 +1392,7 @@ final class KeyboardViewController: UIInputViewController {
     private func updateCandidates() {
         reverseButton?.isEnabled = tapCycle.canReverse(composer.reading.last.map(String.init))
         // Keep the literal reading reachable even when conversion has many results.
-        let displayed = composer.isEmpty ? [] : [composer.reading] + composer.candidates.filter { $0 != composer.reading }
+        let displayed = composer.isEmpty || !composer.convertsReading ? [] : [composer.reading] + composer.candidates.filter { $0 != composer.reading }
         let signature = String(manualEdit != nil) + String(Int(reviewSize)) + displayed.joined(separator: "\u{0}")
         guard signature != lastCandidateText else { return }
         lastCandidateText = signature
@@ -1306,7 +1432,7 @@ final class KeyboardViewController: UIInputViewController {
     private func updatePreviewLayout() {
         // Give empty rows to the preview without making keys jump or shrink.
         // Face ID iPhones already have the system globe outside this view.
-        candidateScroll.isHidden = (composer.isEmpty && manualEdit == nil) || showingAllTypedCandidates
+        candidateScroll.isHidden = !composer.convertsReading || (composer.isEmpty && manualEdit == nil) || showingAllTypedCandidates
         globe.isHidden = !needsInputModeSwitchKey
         updateLandscapeLayout()
         if sideBySide {
@@ -1367,9 +1493,30 @@ final class KeyboardViewController: UIInputViewController {
         }
     }
 
-    private func updateTabletLayout() {
-        tabletLayoutButton.isHidden = !isTablet
-        guard isTablet else { return }
+    private func updateLayoutPreferences() {
+        if !isTablet {
+            let selected = snapshot.settings.phoneKeyboardLayout ?? .standard
+            if activePhoneLayout != selected {
+                commit()
+                activePhoneLayout = selected
+                buildKeys()
+            } else if layoutButton.menu != nil { return }
+            layoutButton.setTitle("配列", for: .normal)
+            layoutButton.accessibilityLabel = "キー配列"
+            layoutButton.menu = UIMenu(children: PhoneKeyboardLayout.allCases.map { layout in
+                UIAction(title: layout.label, state: selected == layout ? .on : .off) { [weak self] _ in
+                    guard let self else { return }
+                    if hasFullAccess {
+                        saveLayoutPreferences { $0.phoneKeyboardLayout = layout }
+                    } else {
+                        UserDefaults.standard.set(layout.rawValue, forKey: "phoneKeyboardLayout")
+                        snapshot.settings.phoneKeyboardLayout = layout
+                        updateLayoutPreferences()
+                    }
+                }
+            })
+            return
+        }
         let size = snapshot.settings.tabletKeyboardSize ?? .standard
         let position = snapshot.settings.tabletKeyboardPosition ?? .center
         guard appliedTabletSize != size || appliedTabletPosition != position else { return }
@@ -1382,25 +1529,25 @@ final class KeyboardViewController: UIInputViewController {
         }
         rootAlignment.isActive = true
         updateLandscapeLayout()
-        tabletLayoutButton.menu = UIMenu(children: [
+        layoutButton.menu = UIMenu(children: [
             UIMenu(title: "幅", options: .displayInline, children: TabletKeyboardSize.allCases.map { option in
                 UIAction(title: option.label, state: option == size ? .on : .off) { [weak self] _ in
-                    self?.saveTabletLayout { $0.tabletKeyboardSize = option }
+                    self?.saveLayoutPreferences { $0.tabletKeyboardSize = option }
                 }
             }),
             UIMenu(title: "位置", options: .displayInline, children: TabletKeyboardPosition.allCases.map { option in
                 UIAction(title: option.label, state: option == position ? .on : .off) { [weak self] _ in
-                    self?.saveTabletLayout { $0.tabletKeyboardPosition = option }
+                    self?.saveLayoutPreferences { $0.tabletKeyboardPosition = option }
                 }
             })
         ])
     }
 
-    private func saveTabletLayout(_ change: (inout LocalSettings) -> Void) {
-        guard let store else { return }
+    private func saveLayoutPreferences(_ change: (inout LocalSettings) -> Void) {
         do {
+            let store = try store ?? AppGroupContainer.open()
             snapshot = try store.update { state in change(&state.settings); return state }
-            updateTabletLayout()
+            updateLayoutPreferences()
         } catch { notice.text = error.localizedDescription }
     }
 }

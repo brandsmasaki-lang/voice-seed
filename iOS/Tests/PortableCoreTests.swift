@@ -6,6 +6,16 @@ import Foundation
         func expect(_ condition: @autoclosure () -> Bool, _ name: String) {
             precondition(condition(), name); assertions += 1
         }
+        for layout in [PhoneKeypad.latinRows, PhoneKeypad.numberRows] {
+            expect(layout.count == 4 && layout.allSatisfy { $0.count == 3 }, "four rows of three input keys")
+            expect(layout.joined().allSatisfy { (1...5).contains($0.count) }, "every symbol fits a tap or flick")
+        }
+        let letters = PhoneKeypad.latinRows.flatMap { $0 }.joined().filter { $0.isLetter }
+        expect(letters == "abcdefghijklmnopqrstuvwxyz", "grouped keys cover the alphabet in phone order")
+        let digits = PhoneKeypad.numberRows.flatMap { $0 }.compactMap(\.first).filter(\.isNumber)
+        expect(String(digits) == "1234567890", "digits stay in telephone order")
+        let oldSettings = try JSONDecoder().decode(LocalSettings.self, from: JSONEncoder().encode(LocalSettings()))
+        expect(oldSettings.phoneKeyboardLayout == nil, "settings without a phone layout still decode")
         let now = Date()
         var state = SessionSnapshot(); state.activate(at: now); state.phase = .ready
         expect(state.isLive(at: now), "fresh heartbeat")
