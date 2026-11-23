@@ -142,8 +142,12 @@ struct SessionSnapshot: Codable, Equatable, Sendable {
 
     func keyboardGuidance(at now: Date) -> String {
         if isLive(at: now) {
-            if phase == .preparing { return "マイクに接続しています…" }
-            return ""
+            switch phase {
+            case .preparing: return "マイクに接続しています…"
+            case .listening: return "音声を認識中…"
+            case .processing: return "文章を確定中…"
+            default: return ""
+            }
         }
         return "マイクを押すと、オトナの音声入力 こえのたねが一度開きます。戻ると聞き取りが始まります。"
     }

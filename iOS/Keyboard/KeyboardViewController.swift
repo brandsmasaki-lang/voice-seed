@@ -226,6 +226,7 @@ final class KeyboardViewController: UIInputViewController {
         hideStyle.contentInsets = .init(top: 4, leading: 8, bottom: 4, trailing: 8)
         hideStyle.baseForegroundColor = KeyboardPalette.ink
         hideButton.configuration = hideStyle
+        hideButton.accessibilityIdentifier = "toolbar-dismiss"
         hideButton.accessibilityLabel = "キーボードをしまう"
         hideButton.setContentCompressionResistancePriority(.required, for: .horizontal)
         hideButton.addAction(UIAction { [weak self] _ in self?.hideKeyboard() }, for: .touchUpInside)
@@ -276,7 +277,25 @@ final class KeyboardViewController: UIInputViewController {
         noticeHeight.isActive = true
         notice.accessibilityIdentifier = "dictation-preview"
         notice.accessibilityLabel = "認識プレビュー"
-        previewColumn.addArrangedSubview(previewArea)
+        if isTablet {
+            let dismiss = UIButton(type: .system)
+            var style = UIButton.Configuration.filled()
+            style.image = UIImage(systemName: "chevron.down", withConfiguration: UIImage.SymbolConfiguration(pointSize: 20, weight: .semibold))
+            style.baseBackgroundColor = KeyboardPalette.control
+            style.baseForegroundColor = KeyboardPalette.ink
+            style.background.cornerRadius = 8
+            dismiss.configuration = style
+            dismiss.accessibilityIdentifier = "preview-dismiss"
+            dismiss.accessibilityLabel = "キーボードをしまう"
+            dismiss.accessibilityHint = "プレビューの先頭から下にスワイプしてもしまえます"
+            dismiss.addAction(UIAction { [weak self] _ in self?.hideKeyboard() }, for: .touchUpInside)
+            dismiss.widthAnchor.constraint(equalToConstant: 44).isActive = true
+            let previewRow = UIStackView(arrangedSubviews: [previewArea, dismiss])
+            previewRow.spacing = 6
+            previewColumn.addArrangedSubview(previewRow)
+        } else {
+            previewColumn.addArrangedSubview(previewArea)
+        }
         previewColumn.addArrangedSubview(reviewHint)
         candidates.axis = .horizontal; candidates.spacing = 8
         candidateScroll.addSubview(candidates); candidates.translatesAutoresizingMaskIntoConstraints = false
@@ -585,6 +604,13 @@ final class KeyboardViewController: UIInputViewController {
         }
         guard let document = availableDocumentID() else {
             speechButton.isEnabled = false
+            // UIKit can reconnect the input field while the same recording continues.
+            // Its preview can refresh, but delivery still needs a settled document.
+            if let pending, pending.documentID == currentDocument, pending.focusID == focusID,
+               let current = try? store?.read(), current.request?.id == pending.id,
+               current.phase == .listening || current.phase == .processing {
+                showRecordingPreview(current)
+            }
             return
         }
         if document != currentDocument {
@@ -710,7 +736,6 @@ final class KeyboardViewController: UIInputViewController {
                 && !(snapshot.phase == .ready && pending != nil)
                 && !(snapshot.phase == .listening && (pending == nil || pending?.stoppedAt != nil))
             let showingPreview = !snapshot.preview.isEmpty && !hasDraft
-            let previewText = showingPreview ? snapshot.preview : (snapshot.retainedDraft?.text ?? snapshot.keyboardGuidance(at: Date()))
             if let manualEdit {
                 notice.display(manualEdit.committed + composer.reading, isPreview: true)
                 finishReplacement.isEnabled = !manualEdit.committed.isEmpty || !composer.isEmpty
@@ -718,7 +743,9 @@ final class KeyboardViewController: UIInputViewController {
             else if let result = dictionaryImportNotice, result.until > Date(), !showingPreview,
                     !hasDraft, pending == nil, [.inactive, .ready, .failed].contains(snapshot.phase) {
                 notice.display(result.message, isPreview: false)
-            } else { notice.display(previewText, isPreview: showingPreview || hasDraft) }
+            } else if hasDraft, let draft = snapshot.retainedDraft {
+                notice.display(draft.text, isPreview: true)
+            } else { showRecordingPreview(snapshot) }
             let capturing = !hasDraft && (pending != nil || snapshot.phase == .listening || snapshot.phase == .processing)
             correctionStrip.isHidden = page == .voice || correction == nil || showingPreview || capturing || !composer.isEmpty || manualEdit != nil
             notice.isHidden = !correctionStrip.isHidden
@@ -736,7 +763,7 @@ final class KeyboardViewController: UIInputViewController {
             else if selectedWord != nil { hint = "← →で黄色の範囲を1文字ずつ調整" }
             else if !correctionStrip.isHidden {
                 hint = hasDraft ? "貼り付け前 · 直したい語をタップ" : "貼り付け済み · 直したい語をタップ"
-            } else if snapshot.phase == .listening { hint = "聞き取り中" }
+            } else if snapshot.phase == .listening && showingPreview { hint = "聞き取り中" }
             else { hint = nil }
             reviewHint.text = hint
             reviewHint.isHidden = hint == nil
@@ -748,6 +775,11 @@ final class KeyboardViewController: UIInputViewController {
             }
         } catch SharedStoreError.busy { }
         catch { notice.text = error.localizedDescription }
+    }
+
+    private func showRecordingPreview(_ state: SessionSnapshot) {
+        let hasText = !state.preview.isEmpty
+        notice.display(hasText ? state.preview : state.keyboardGuidance(at: Date()), isPreview: hasText)
     }
 
     private func speechAction(pasteWhenStopped: Bool = true) {

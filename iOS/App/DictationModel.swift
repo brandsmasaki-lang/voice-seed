@@ -24,7 +24,7 @@ import UIKit
     private var finishing: Task<Void, Never>?
     private var generation = UUID()
     private var heartbeatAt = Date.distantPast
-    private var publishingPreviewAt = Date.distantPast
+    private var pendingPreview: (requestID: UUID, text: String)?
     private var activating = false
     private let synthetic: Bool
     private let syntheticUI: Bool
@@ -162,7 +162,16 @@ import UIKit
         guard let store else { throw SharedStoreError.unavailable }
         // Return the committed snapshot under the same lock. A second read
         // could fail with busy after a successful write and lose the command.
-        state = try store.update { value in try body(&value); return value }
+        // Commit the newest recognition together with the next write, including Stop
+        // or Cancel. A busy store leaves it pending for the next polling cycle.
+        state = try store.update { value in
+            if let pendingPreview, pendingPreview.requestID == value.request?.id {
+                value.preview = pendingPreview.text
+            }
+            try body(&value)
+            return value
+        }
+        pendingPreview = nil
     }
 
     private func poll() async {
@@ -173,8 +182,16 @@ import UIKit
                let end = state.expiresAt, Date() >= end {
                 disconnect(message: "マイクの待機時間が終了しました。必要なときに再開できます。")
             }
-            if state.sessionID != nil, Date().timeIntervalSince(heartbeatAt) >= 0.4 {
-                heartbeatAt = Date(); try update { $0.refreshHeartbeat(at: heartbeatAt); $0.hostIsForeground = isForeground }
+            let now = Date()
+            let heartbeatDue = state.sessionID != nil && now.timeIntervalSince(heartbeatAt) >= 0.4
+            if heartbeatDue || pendingPreview != nil {
+                try update {
+                    if heartbeatDue {
+                        $0.refreshHeartbeat(at: now)
+                        $0.hostIsForeground = isForeground
+                    }
+                }
+                if heartbeatDue { heartbeatAt = now }
             }
             if let command = try store.nextCommand(at: Date()) {
                 IOSPreparationTrace.step("command." + command.kind.rawValue)
@@ -198,10 +215,10 @@ import UIKit
                             syntheticParagraphs[1] = "次の予定を確認します。"
                         }
                         #endif
-                        try update { $0.preview = syntheticParagraphs.joined(separator: "\n") }
+                        pendingPreview = (owner.id, syntheticParagraphs.joined(separator: "\n"))
                     } else if let active {
                         let preview = active.insertLineBreak(at: command.createdAt)
-                        try update { $0.preview = preview }
+                        pendingPreview = (owner.id, preview)
                     }
                 case .stop:
                     if let request = command.request, state.request?.id == request.id { finish() }
@@ -287,7 +304,7 @@ import UIKit
             }
             if synthetic {
                 syntheticParagraphs = [syntheticPhrase]
-                try? update { $0.preview = syntheticPhrase }
+                pendingPreview = (request.id, syntheticPhrase)
                 return
             }
             guard let capture = prepared else {
@@ -297,10 +314,7 @@ import UIKit
             prepared = nil; active = capture
             capture.onPreview = { [weak self] text in
                 guard let self, self.state.request?.id == request.id else { return }
-                if Date().timeIntervalSince(self.publishingPreviewAt) >= 0.12 {
-                    self.publishingPreviewAt = Date()
-                    try? self.update { $0.preview = text }
-                }
+                self.pendingPreview = (request.id, text)
             }
             capture.onLevel = { [weak self] level in
                 guard let self, self.state.phase == .listening, self.state.request?.id == request.id else { return }
