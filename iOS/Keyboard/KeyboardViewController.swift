@@ -85,6 +85,7 @@ final class KeyboardViewController: UIInputViewController {
     private var appliedTabletPosition: TabletKeyboardPosition?
     private var isTablet: Bool { traitCollection.userInterfaceIdiom == .pad }
     private let composer = JapaneseComposer()
+    private weak var reverseButton: UIButton?
     private var tapCycle = KanaTapCycle()
     private var store: SharedSessionStore?
     private var snapshot = SessionSnapshot()
@@ -282,7 +283,7 @@ final class KeyboardViewController: UIInputViewController {
             let arrow = key(title, fontSize: 24) { [weak self] in self?.moveCursor(direction) }
             arrow.widthAnchor.constraint(greaterThanOrEqualToConstant: 44).isActive = true
             arrow.heightAnchor.constraint(equalToConstant: 44).isActive = true
-            arrow.accessibilityHint = "選択中は黄色の範囲を、通常はカーソルを1文字動かします"
+            arrow.accessibilityHint = isTablet ? "選択中は黄色の範囲を、通常はカーソルを1文字動かします" : "カーソルを1文字動かします"
             bottomBar.addArrangedSubview(arrow)
         }
         selectionPart.selectedSegmentIndex = 0
@@ -501,8 +502,8 @@ final class KeyboardViewController: UIInputViewController {
             if pasteButton.configuration?.title != pasteTitle { pasteButton.configuration?.title = pasteTitle }
             pasteButton.isEnabled = !queued && (finalizing || (hasDraft && snapshot.retainedDraft?.text.isEmpty == false))
                 && composer.isEmpty && manualEdit == nil && selectedWord == nil && rangeSelection == nil
-            let reviewing = hasDraft && (expandedDraftID == reviewedDraftID || selectedWord != nil || manualEdit != nil || rangeSelection != nil)
-            reviewButton.isHidden = !hasDraft
+            let reviewing = isTablet && hasDraft && (expandedDraftID == reviewedDraftID || selectedWord != nil || manualEdit != nil || rangeSelection != nil)
+            reviewButton.isHidden = !isTablet || !hasDraft
             reviewButton.setTitle(reviewing ? "修正中" : "修正する", for: .normal)
             reviewButton.isEnabled = !reviewing && composer.isEmpty
             if reviewing, choicesPanel.isHidden, manualEdit == nil, composer.isEmpty {
@@ -537,7 +538,7 @@ final class KeyboardViewController: UIInputViewController {
             settingsHost?.view.isHidden = pending != nil || hasDraft
             let label: String
             switch snapshot.phase {
-            case .listening: label = "録音を終了"
+            case .listening: label = isTablet ? "録音を終了" : "終了して貼り付け"
             case .processing: label = "文章を確定中"
             case .ready: label = "🎙 タップして話す"
             default: label = snapshot.phase.label
@@ -550,7 +551,7 @@ final class KeyboardViewController: UIInputViewController {
                 && !(snapshot.phase == .ready && pending != nil)
                 && !(snapshot.phase == .listening && (pending == nil || pending?.stoppedAt != nil))
             let showingPreview = !snapshot.preview.isEmpty && !hasDraft
-            let previewText = showingPreview ? snapshot.preview : snapshot.keyboardGuidance(at: Date())
+            let previewText = showingPreview ? snapshot.preview : (snapshot.retainedDraft?.text ?? snapshot.keyboardGuidance(at: Date()))
             if let manualEdit {
                 notice.display(manualEdit.committed + composer.reading, isPreview: true)
                 finishReplacement.isEnabled = !manualEdit.committed.isEmpty || !composer.isEmpty
@@ -558,7 +559,7 @@ final class KeyboardViewController: UIInputViewController {
             else if let result = dictionaryImportNotice, result.until > Date(), !showingPreview,
                     !hasDraft, pending == nil, [.inactive, .ready, .failed].contains(snapshot.phase) {
                 notice.display(result.message, isPreview: false)
-            } else { notice.display(previewText, isPreview: showingPreview) }
+            } else { notice.display(previewText, isPreview: showingPreview || hasDraft) }
             let capturing = !hasDraft && (pending != nil || snapshot.phase == .listening || snapshot.phase == .processing)
             correctionStrip.isHidden = correction == nil || showingPreview || capturing || !composer.isEmpty || manualEdit != nil
             notice.isHidden = !correctionStrip.isHidden
@@ -599,6 +600,9 @@ final class KeyboardViewController: UIInputViewController {
                 request.stoppedAt = Date()
                 try store.enqueue(.init(kind: .stop, request: request))
                 pending = request
+                if !isTablet {
+                    draftInsertion = (request.id, document, focusID, nil)
+                }
                 speechButton.isEnabled = false
                 refresh()
                 return
@@ -668,7 +672,8 @@ final class KeyboardViewController: UIInputViewController {
         let originalFocus = focusID
         do {
             guard let draft = try store.update({ state -> RetainedDraft? in
-                guard state.retainedDraft?.text == correction?.text, state.retainedDraft?.text.isEmpty == false,
+                let expectedText = isTablet ? correction?.text : snapshot.retainedDraft?.text
+                guard state.retainedDraft?.text == expectedText, state.retainedDraft?.text.isEmpty == false,
                       request.expires != nil || state.retainedDraft?.isInterruptedPreview != true else { return nil }
                 return state.takeRetainedDraft(id)
             }) else { return }
@@ -698,8 +703,8 @@ final class KeyboardViewController: UIInputViewController {
     }
 
     private func insertDictation(_ text: String, document: String) {
-        let state = DictationCorrection(text: text, before: textDocumentProxy.documentContextBeforeInput,
-            after: textDocumentProxy.documentContextAfterInput, document: document, focus: focusID)
+        let state = isTablet ? DictationCorrection(text: text, before: textDocumentProxy.documentContextBeforeInput,
+            after: textDocumentProxy.documentContextAfterInput, document: document, focus: focusID) : nil
         textDocumentProxy.insertText(text)
         editingCorrection?.cancel()
         editingCorrection = nil
@@ -713,6 +718,7 @@ final class KeyboardViewController: UIInputViewController {
     }
 
     private func syncDraftForReview() {
+        guard isTablet else { return }
         let draft = snapshot.retainedDraft
         guard draft?.id != reviewedDraftID || (draft != nil && draft?.text != correction?.text) else { return }
         editingCorrection?.cancel()
@@ -1087,12 +1093,21 @@ final class KeyboardViewController: UIInputViewController {
                 }))
             }
             let space = spaceButton("空白")
-            let right = UIStackView(arrangedSubviews: [
-                deleteKey(), space,
-                key("改行") { [weak self] in self?.enter() }
-            ]); right.axis = .vertical; right.spacing = 5
-            right.arrangedSubviews[0].heightAnchor.constraint(equalToConstant: 45).isActive = true
-            right.arrangedSubviews[1].heightAnchor.constraint(equalToConstant: 45).isActive = true
+            let right = UIStackView(arrangedSubviews: [deleteKey(), space])
+            right.axis = .vertical
+            right.spacing = 5
+            if isTablet {
+                right.arrangedSubviews[0].heightAnchor.constraint(equalToConstant: 45).isActive = true
+                space.heightAnchor.constraint(equalToConstant: 45).isActive = true
+            } else {
+                let reverse = key("逆送り", fontSize: 17) { [weak self] in self?.reverseKana() }
+                reverse.accessibilityHint = "最後に入力したかなを、同じキーの一つ前の文字に戻します"
+                reverse.isEnabled = tapCycle.canReverse(composer.reading.last.map(String.init))
+                right.addArrangedSubview(reverse)
+                reverseButton = reverse
+                right.distribution = .fillEqually
+            }
+            right.addArrangedSubview(key("改行") { [weak self] in self?.enter() })
             let body = UIStackView(arrangedSubviews: [middle, right]); body.axis = .horizontal; body.spacing = 6
             right.widthAnchor.constraint(equalTo: body.widthAnchor, multiplier: 0.22).isActive = true
             bodyStack.addArrangedSubview(body)
@@ -1139,6 +1154,13 @@ final class KeyboardViewController: UIInputViewController {
             composer.append(edit.text)
         }
         setMarked(); updateCandidates()
+    }
+    private func reverseKana() {
+        guard let edit = tapCycle.reverse(currentLast: composer.reading.last.map(String.init),
+                                          at: ProcessInfo.processInfo.systemUptime) else { return }
+        composer.replaceLast(edit.text)
+        setMarked()
+        updateCandidates()
     }
     private func alternate() { cancelPending(); tapCycle.reset(); composer.alternateLast(); setMarked(); updateCandidates() }
     private func setMarked() {
@@ -1242,6 +1264,7 @@ final class KeyboardViewController: UIInputViewController {
         }
     }
     private func updateCandidates() {
+        reverseButton?.isEnabled = tapCycle.canReverse(composer.reading.last.map(String.init))
         // Keep the literal reading reachable even when conversion has many results.
         let displayed = composer.isEmpty ? [] : [composer.reading] + composer.candidates.filter { $0 != composer.reading }
         let signature = String(manualEdit != nil) + String(Int(reviewSize)) + displayed.joined(separator: "\u{0}")

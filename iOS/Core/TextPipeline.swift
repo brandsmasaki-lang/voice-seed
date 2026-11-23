@@ -130,7 +130,11 @@ enum TextPipeline {
 
     // Restrict sound-alike corrections to the reported mixed-script phrases.
     private static let editionPair = try! NSRegularExpression(
-        pattern: #"(?i)(?<![a-z0-9_])(?:(?:Appマン|アップマン|App版|アップ版)と(?:ゲット|ギット|Git)版|Appバンドギフトバン(?=は(?:一緒|同じ)))"#)
+        pattern: #"(?i)(?<![a-z0-9_])(?:(?:Appマン|アップマン|App版|アップ版)と(?:ゲット|ギット|キット|Git)版|Appバンドギフトバン(?=は(?:一緒|同じ)))"#)
+    // A real craft kit may also be called a キット版. Require an app or Mac
+    // qualifier for that spelling; ギット版 itself is the spoken Git edition.
+    private static let gitEdition = try! NSRegularExpression(
+        pattern: #"(?i)(?:ギット版|(?<=Macの)キット版|(?<=マックの)キット版|(?<=こえのたねの)キット版|(?<=GitHubの)キット版)"#)
     private static let taisetsu = try! NSRegularExpression(
         pattern: #"(?<![A-Za-z0-9_])(?:DAI|だい|ダイ)切(?=$|[\s、。！？!?」』]|[なにさでだ])"#)
 
@@ -146,7 +150,10 @@ enum TextPipeline {
                 }
             }
         }
-        if text.contains("版") || text.contains("ギフトバン") { collect(editionPair, replacement: "App版とGit版") }
+        if text.contains("版") || text.contains("ギフトバン") {
+            collect(editionPair, replacement: "App版とGit版")
+            collect(gitEdition, replacement: "Git版")
+        }
         if text.contains("切"), entries.contains(where: isDaiShortcut) {
             collect(taisetsu, replacement: "大切")
         }
@@ -211,6 +218,7 @@ enum TextPipeline {
         // The original already contains the one-pass dictionary replacements. Reapplying
         // them to the model output would allow chained replacements and miss paraphrases.
         var protected = Set(dictionary.map(\.written))
+        protected.insert("Git版")
         protected.insert("App版とGit版")
         if dictionary.contains(where: isDaiShortcut) {
             protected.insert("大切")

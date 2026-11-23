@@ -43,7 +43,7 @@ config = configurations("project", {"SDKROOT": "macosx", "MACOSX_DEPLOYMENT_TARG
 target_config = configurations("target", {"PRODUCT_NAME": "こえのたね", "EXECUTABLE_NAME": "VoiceSeed", "PRODUCT_MODULE_NAME": "VoiceSeedStore",
     "PRODUCT_BUNDLE_IDENTIFIER": "jp.ainotane.koenotane.ios", "INFOPLIST_FILE": "Config/App-Info.plist",
     "GENERATE_INFOPLIST_FILE": "NO", "CODE_SIGN_ENTITLEMENTS": "Config/App.entitlements",
-    "CURRENT_PROJECT_VERSION": "25", "MARKETING_VERSION": "0.7.9", "COMBINE_HIDPI_IMAGES": "YES"})
+    "CURRENT_PROJECT_VERSION": "27", "MARKETING_VERSION": "0.7.10", "COMBINE_HIDPI_IMAGES": "YES"})
 target = add("target", f"isa = PBXNativeTarget; buildConfigurationList = {target_config}; buildPhases = {listing(phases)}; buildRules = (); dependencies = (); name = VoiceSeed-Mac-AppStore; productName = VoiceSeed; productReference = {product}; productType = \"com.apple.product-type.application\";")
 project = add("project", f"isa = PBXProject; attributes = {{LastUpgradeCheck = 2700;}}; buildConfigurationList = {config}; compatibilityVersion = \"Xcode 14.0\"; developmentRegion = ja; knownRegions = (ja,en,Base,); mainGroup = {group}; productRefGroup = {products}; projectDirPath = \"\"; projectRoot = \"\"; targets = ({target},);")
 text = "// !$*UTF8*$!\n{archiveVersion = 1; classes = {}; objectVersion = 56; objects = {\n"

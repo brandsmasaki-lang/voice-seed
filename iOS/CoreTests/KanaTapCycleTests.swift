@@ -2,6 +2,23 @@ import XCTest
 @testable import VoiceSeedCore
 
 final class KanaTapCycleTests: XCTestCase {
+    func testReverseAfterFlickOrRepeatedTapAndWrapWithinTheKey() {
+        let key = KanaLayout.rows[0][0]
+        var cycle = KanaTapCycle()
+        XCTAssertNil(cycle.reverse(currentLast: nil, at: 0))
+        _ = cycle.resolve(values: key, selectedIndex: 2, at: 0, currentLast: nil)
+        XCTAssertEqual(cycle.reverse(currentLast: "う", at: 3)?.text, "い")
+        XCTAssertEqual(cycle.reverse(currentLast: "い", at: 4)?.text, "あ")
+        XCTAssertEqual(cycle.reverse(currentLast: "あ", at: 5)?.text, "お")
+        XCTAssertEqual(cycle.resolve(values: key, selectedIndex: 0, at: 5.1, currentLast: "お"),
+                       .init(text: "あ", replacesLast: true))
+        _ = cycle.resolve(values: key, selectedIndex: 0, at: 5.2, currentLast: "あ")
+        _ = cycle.resolve(values: key, selectedIndex: 0, at: 5.3, currentLast: "い")
+        XCTAssertEqual(cycle.reverse(currentLast: "う", at: 5.4), .init(text: "い", replacesLast: true))
+        cycle.reset()
+        XCTAssertNil(cycle.reverse(currentLast: "い", at: 6))
+    }
+
     func testFourPunctuationTapsProduceOneExclamationMark() {
         var cycle = KanaTapCycle(), reading = ""
         let values = KanaLayout.rows[3][2]

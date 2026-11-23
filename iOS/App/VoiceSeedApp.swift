@@ -58,7 +58,7 @@ private struct CorrectionBench: View {
                         return true
                     }
                     field = 1
-                    status = prepared ? "「修正する」か「貼り付ける」を選んでください" : "入力待ちの文章があります"
+                    status = prepared ? (UIDevice.current.userInterfaceIdiom == .pad ? "「修正する」か「貼り付ける」を選んでください" : "入力先に戻り、「貼り付ける」をタップしてください") : "入力待ちの文章があります"
                 } catch { status = error.localizedDescription }
             }
             Text(status).font(.footnote)

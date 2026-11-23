@@ -44,23 +44,37 @@ import ApplicationServices
 
     @discardableResult func start() -> Bool {
         #if APP_STORE
-        // PostEvent authorizes pasting. Fn is a modifier; observing its public
-        // state needs no keyboard event stream. The counter contains no key data.
-        if InputAccess.canPaste {
-            if modifierTimer == nil {
-                if tap != nil { stop() }
-                sampleModifiers() // Establish a baseline; never start on an already-held Fn.
-                let timer = Timer(timeInterval: 1.0 / 30, repeats: true) { [weak self] _ in
-                    MainActor.assumeIsolated { self?.sampleModifiers() }
-                }
-                timer.tolerance = 0.005
-                RunLoop.main.add(timer, forMode: .common)
-                modifierTimer = timer
-            }
+        // With Input Monitoring, flagsChanged preserves the ordering between typing
+        // and Fn. Keep polling available on Macs with only paste permission.
+        let canListen = InputAccess.canListen
+        if !canListen, tap != nil { stop() }
+        if let tap, CGEvent.tapIsEnabled(tap: tap) { return true }
+        if canListen && !sampledHold.recording && startEventTap() {
+            modifierTimer?.invalidate()
+            modifierTimer = nil
+            sampledHold = SampledFnHold()
             return true
         }
-        if modifierTimer != nil { stop() }
+        guard InputAccess.canPaste else {
+            stop()
+            return false
+        }
+        if modifierTimer == nil {
+            sampleModifiers()
+            let timer = Timer(timeInterval: 1.0 / 90, repeats: true) { [weak self] _ in
+                MainActor.assumeIsolated { self?.sampleModifiers() }
+            }
+            timer.tolerance = 0.002
+            RunLoop.main.add(timer, forMode: .common)
+            modifierTimer = timer
+        }
+        return true
+        #else
+        return startEventTap()
         #endif
+    }
+
+    private func startEventTap() -> Bool {
         if let tap {
             if CGEvent.tapIsEnabled(tap: tap) { return true }
             stop() // Discard the stale port and establish a fresh event stream.
@@ -89,6 +103,12 @@ import ApplicationServices
             if let tap { CGEvent.tapEnable(tap: tap, enable: true) }
             return
         }
+        #if APP_STORE
+        if IsSecureEventInputEnabled() {
+            if state.reset() { onInterrupted?() }
+            return
+        }
+        #endif
         if type == .keyDown {
             // Observe only whether a key was pressed during Fn. Never extract typed text or its key code.
             if state.usedWithKey() == .keyboardChord { onKeyboardChord?() }

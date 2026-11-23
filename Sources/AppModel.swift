@@ -311,7 +311,8 @@ enum RecordingPhase: String {
             : "文字起こしができました。内容を確認してコピーできます。"
         phase = .preparing
         inputRequestedAt = Date()
-        backgroundNotice = ""; hud?.hide()
+        backgroundNotice = ""
+        if fromShortcut { hud?.show() } else { hud?.hide() }
         notice = ""
         livePreview = ""
         lastFinalizeSeconds = nil
