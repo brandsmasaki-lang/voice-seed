@@ -104,7 +104,7 @@ private struct DictationHome: View {
                 }
                 VStack(alignment: .leading, spacing: 10) {
                     Text("ほかのアプリで使う").font(.headline)
-                    Text("① 本体でマイクを準備します。\n② LINEやメールの入力欄に戻ります。\n③ 🌐で「オトナの音声入力 こえのたね」に切り替え、マイクをタップ。\n④ " + (UIDevice.current.userInterfaceIdiom == .pad ? "話し終わったら「録音を終了」を押し、「修正する」か「貼り付ける」を選びます。" : "話し終わったら「終了して貼り付け」をタップします。"))
+                    Text("① 本体でマイクを準備します。\n② LINEやメールの入力欄に戻ります。\n③ 🌐で「オトナの音声入力 こえのたね」に切り替え、マイクをタップ。\n④ " + (UIDevice.current.userInterfaceIdiom == .pad ? "話し終わったら「録音を終了」を押し、「修正する」か「貼り付ける」を選びます。" : "話し終わったら同じマイクをもう一度タップすると、文章が入ります。"))
                         .font(.subheadline).lineSpacing(6)
                     Text("待機中も端末のマイク使用表示が出ます。「マイクを終了」か、最後の入力から待機時間が経つと止まります。話している途中では終了しません。待機中の音声は認識・保存しません。")
                         .font(.caption).foregroundStyle(.secondary)
