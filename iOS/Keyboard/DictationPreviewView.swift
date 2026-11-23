@@ -6,12 +6,31 @@ extension UIFont {
     }
 }
 
+/// Keep the arrowhead the same width while the shaft adapts to the preview height.
+private final class SwipeDownHint: UIView {
+    override func draw(_ rect: CGRect) {
+        let halfLength = min(bounds.height * 0.3, 30)
+        let wing = min(5.5, halfLength)
+        let tip = CGPoint(x: bounds.midX, y: bounds.midY + halfLength)
+        let arrow = UIBezierPath()
+        arrow.move(to: CGPoint(x: tip.x, y: bounds.midY - halfLength))
+        arrow.addLine(to: tip)
+        arrow.move(to: CGPoint(x: tip.x - wing, y: tip.y - wing))
+        arrow.addLine(to: tip)
+        arrow.addLine(to: CGPoint(x: tip.x + wing, y: tip.y - wing))
+        arrow.lineWidth = 1.75
+        arrow.lineCapStyle = .round
+        arrow.lineJoinStyle = .round
+        KeyboardPalette.secondaryInk.setStroke()
+        arrow.stroke()
+    }
+}
+
 /// A label in a scroll view has no text-selection/caret scroll position to
 /// inherit when a long recognition result is replaced by a short instruction.
 final class DictationPreviewView: UIScrollView, UIScrollViewDelegate {
     private let label = UILabel()
-    private let swipeHint = UIImageView(image: UIImage(systemName: "arrow.down",
-        withConfiguration: UIImage.SymbolConfiguration(pointSize: 13, weight: .regular)))
+    private let swipeHint = SwipeDownHint()
     private let swipeHintWidth: CGFloat = 15
     private var showingPreview = false
     private var followsTail = true
@@ -51,8 +70,8 @@ final class DictationPreviewView: UIScrollView, UIScrollViewDelegate {
         label.font = .preferredFont(forTextStyle: .body, compatibleWith: traitCollection)
         label.adjustsFontForContentSizeCategory = true
         addSubview(label)
-        swipeHint.tintColor = KeyboardPalette.secondaryInk
-        swipeHint.contentMode = .center
+        swipeHint.isOpaque = false
+        swipeHint.contentMode = .redraw
         swipeHint.isAccessibilityElement = false
         swipeHint.isUserInteractionEnabled = false
         swipeHint.translatesAutoresizingMaskIntoConstraints = false
@@ -60,7 +79,8 @@ final class DictationPreviewView: UIScrollView, UIScrollViewDelegate {
         NSLayoutConstraint.activate([
             swipeHint.widthAnchor.constraint(equalToConstant: swipeHintWidth),
             swipeHint.trailingAnchor.constraint(equalTo: frameLayoutGuide.trailingAnchor, constant: -5),
-            swipeHint.centerYAnchor.constraint(equalTo: frameLayoutGuide.centerYAnchor)
+            swipeHint.topAnchor.constraint(equalTo: frameLayoutGuide.topAnchor),
+            swipeHint.bottomAnchor.constraint(equalTo: frameLayoutGuide.bottomAnchor)
         ])
         accessibilityIdentifier = "dictation-preview"
         label.accessibilityLabel = "認識プレビュー"
