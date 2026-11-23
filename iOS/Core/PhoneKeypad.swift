@@ -1,10 +1,7 @@
 import Foundation
 
-enum PhoneKeyboardLayout: String, Codable, CaseIterable, Sendable {
-    case standard, keypad
-
-    var label: String { self == .standard ? "標準" : "テンキー" }
-}
+// Keep decoding the layout preference saved by earlier builds.
+enum PhoneKeyboardLayout: String, Codable, Sendable { case standard, keypad }
 
 enum PhoneKeypad {
     // Tap, then flick left, up, right or down. Short groups omit unused directions.

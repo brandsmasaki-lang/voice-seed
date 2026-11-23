@@ -88,6 +88,11 @@ import Speech
         statement.append(question)
         let text = OnDeviceCapture.punctuated(statement, start: 0, end: 0.8, pitches: await pump.endingPitches())
         precondition(text == "App Storeに並びました。来られる？", "Each sentence must use its own audio time range")
+        let words = OnDeviceCapture.boundaries(in: statement, matching: text)
+        var transcript = TranscriptBuffer()
+        transcript.update(start: 0, end: 0.8, text: text, isFinal: true, words: words)
+        precondition(transcript.paragraphs(at: [duration.seconds], finalOnly: true) ==
+                     ["App Storeに並びました。", "来られる？"], "Split at the tapped audio time after punctuation changes")
         let pitches = await pump.endingPitches()
         precondition(OnDeviceCapture.punctuated(AttributedString("ね？"), start: 0.32, end: 0.4,
             pitches: pitches, preceding: "そうだよ") == "ね。")

@@ -44,7 +44,9 @@ enum JapaneseSpeechModel {
     private let transcriber: DictationTranscriber
     private let analyzer: SpeechAnalyzer
     private(set) var pump: IOSAudioStreamPump?
-    private var reader: Task<String, Error>?
+    private var reader: Task<[String], Error>?
+    private var transcript = TranscriptBuffer(paragraphPause: 1.2)
+    private var lineBreakTimes: [Double] = []
     private var firstResultAt: Date?
     var onPreview: ((String) -> Void)?
     var onLevel: ((Double) -> Void)?
@@ -84,12 +86,12 @@ enum JapaneseSpeechModel {
         capture.pump = pump
         pump.onLevel = { [weak capture] level in Task { @MainActor in capture?.onLevel?(level) } }
         capture.reader = Task { [weak capture, transcriber] in
-            var text = TranscriptBuffer(paragraphPause: 1.2)
             var lastEnd = -Double.infinity
             var lastTone = EndingIntonation.unknown
             var lastTail = ""
             do {
                 for try await result in transcriber.results {
+                    guard let capture else { throw CancellationError() }
                     let start = result.range.start.seconds, end = result.range.end.seconds
                     var segment = String(result.text.characters)
                     if result.isFinal {
@@ -103,18 +105,25 @@ enum JapaneseSpeechModel {
                             lastTail = String((preceding + segment).suffix(32))
                         }
                     }
-                    text.update(start: start, end: end, text: segment, isFinal: result.isFinal)
-                    if capture?.firstResultAt == nil {
-                        IOSPreparationTrace.step("recognition.first.characters=" + String(text.preview.count))
-                    }
-                    if !text.preview.isEmpty {
-                        if capture?.firstResultAt == nil { capture?.firstResultAt = Date() }
-                        capture?.onPreview?(text.preview)
+                    let words = Self.boundaries(in: result.text, matching: segment)
+                    capture.transcript.update(start: start, end: end, text: segment, isFinal: result.isFinal, words: words)
+                    let preview = capture.preview
+                    if !preview.isEmpty {
+                        if capture.firstResultAt == nil {
+                            capture.firstResultAt = Date()
+                            IOSPreparationTrace.step("recognition.first.characters=" + String(preview.count))
+                        }
+                        capture.onPreview?(preview)
                     }
                 }
-                let final = text.finalText
-                if let last = final.last, "。？！?!".contains(last) { return final }
-                return JapaneseSentenceEnding.complete(DictationQuestions.punctuate(final, intonation: lastTone, isUtteranceEnd: true))
+                guard let capture else { throw CancellationError() }
+                var paragraphs = capture.transcript.paragraphs(at: capture.lineBreakTimes, finalOnly: true)
+                if let i = paragraphs.lastIndex(where: { !$0.isEmpty }),
+                   let last = paragraphs[i].last, !"。？！?!".contains(last) {
+                    paragraphs[i] = JapaneseSentenceEnding.complete(DictationQuestions.punctuate(
+                        paragraphs[i], intonation: lastTone, isUtteranceEnd: true))
+                }
+                return paragraphs
             } catch {
                 if !(error is CancellationError) { capture?.onFailure?(error) }
                 throw error
@@ -127,6 +136,32 @@ enum JapaneseSpeechModel {
     }
 
     func start() { startedAt = Date() }
+
+    private var preview: String { transcript.paragraphs(at: lineBreakTimes).joined(separator: "\n") }
+
+    func insertLineBreak(at date: Date) -> String {
+        if let startedAt { lineBreakTimes.append(max(0, date.timeIntervalSince(startedAt))) }
+        return preview
+    }
+
+    // Punctuation may be revised after recognition. Match spoken runs in that revised text.
+    static func boundaries(in result: AttributedString, matching text: String) -> [TranscriptBuffer.WordBoundary] {
+        let ignored = CharacterSet.punctuationCharacters.union(.whitespacesAndNewlines)
+        var cursor = text.startIndex
+        var offset = 0
+        var words: [TranscriptBuffer.WordBoundary] = []
+        for (time, range) in result.runs[\.audioTimeRange] {
+            guard let time else { continue }
+            let word = String(result[range].characters).trimmingCharacters(in: ignored)
+            guard !word.isEmpty, let match = text.range(of: word, range: cursor..<text.endIndex) else { continue }
+            offset += text.distance(from: cursor, to: match.lowerBound)
+            let midpoint = (time.start.seconds + time.end.seconds) / 2
+            if midpoint.isFinite { words.append(.init(midpoint: midpoint, offset: words.isEmpty ? 0 : offset)) }
+            offset += text.distance(from: match.lowerBound, to: match.upperBound)
+            cursor = match.upperBound
+        }
+        return words
+    }
 
     /// Score only punctuation for which Speech supplied a word or segment boundary.
     static func punctuated(_ transcript: AttributedString, start: Double, end: Double,
@@ -156,7 +191,7 @@ enum JapaneseSpeechModel {
         return String((output + clause).dropFirst(preceding.count))
     }
 
-    func finish() async throws -> String {
+    func finish() async throws -> [String] {
         pump?.finish()
         #if DEBUG
         if let input = await pump?.inputDiagnostics() {
@@ -171,8 +206,8 @@ enum JapaneseSpeechModel {
         defer { deadline.cancel() }
         do {
             try await analyzer.finalizeAndFinishThroughEndOfInput()
-            let text = try await reader?.value ?? ""
-            guard !text.isEmpty else { throw DictationFailure.noSpeech }
+            let text = try await reader?.value ?? []
+            guard text.contains(where: { !$0.isEmpty }) || !lineBreakTimes.isEmpty else { throw DictationFailure.noSpeech }
             return text
         } catch {
             await analyzer.cancelAndFinishNow(); reader?.cancel(); throw error

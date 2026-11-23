@@ -26,7 +26,7 @@ struct CaptureRequest: Codable, Equatable, Sendable, Identifiable {
 }
 
 struct SessionCommand: Codable, Equatable, Sendable, Identifiable {
-    enum Kind: String, Codable, Sendable { case activate, start, stop, cancel, disconnect, showSettings }
+    enum Kind: String, Codable, Sendable { case activate, start, lineBreak, stop, cancel, disconnect, showSettings }
     var id = UUID()
     var kind: Kind
     var createdAt = Date()

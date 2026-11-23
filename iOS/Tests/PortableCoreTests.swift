@@ -18,6 +18,17 @@ import Foundation
         expect(oldSettings.phoneKeyboardLayout == nil, "settings without a phone layout still decode")
         expect(VoiceSeedLink(url: VoiceSeedLink.keyboardSettingsURL) == .keyboardSettings, "settings handoff needs no shared activation ticket")
         expect(VoiceSeedLink(url: URL(string: "koenotane://keyboard-settings?url=elsewhere")!) == nil, "settings handoff is a fixed destination")
+        var spoken = TranscriptBuffer(paragraphPause: 1.2)
+        let tap = 1.5
+        spoken.update(start: 0, end: 1, text: "きょうは", isFinal: false)
+        expect(spoken.paragraphs(at: [tap]) == ["きょうは", ""], "newline before more speech arrives")
+        spoken.update(start: 0, end: 3, text: "今日は晴れ。明日も晴れ。", isFinal: true,
+                      words: [.init(midpoint: 0.4, offset: 0), .init(midpoint: 2.3, offset: 6)])
+        expect(spoken.paragraphs(at: [tap], finalOnly: true) == ["今日は晴れ。", "明日も晴れ。"],
+               "final spelling revisions retain the break at the spoken word")
+        expect(spoken.paragraphs(at: [0, tap, tap, 4], finalOnly: true) == ["", "今日は晴れ。", "", "明日も晴れ。", ""],
+               "leading, repeated and trailing line breaks survive")
+        expect(spoken.paragraphs(at: []) == [spoken.preview], "no tap preserves ordinary punctuation and paragraphs")
         let now = Date()
         var state = SessionSnapshot(); state.activate(at: now); state.phase = .ready
         expect(state.isLive(at: now), "fresh heartbeat")

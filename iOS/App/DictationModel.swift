@@ -34,6 +34,7 @@ import UIKit
         #endif
         return "明日の打ち合わせは午後3時からです。"
     }
+    private var syntheticParagraphs: [String] = []
     private var lastDeliveryTrace = ""
     private var initialized = false
     private var isForeground = true
@@ -187,6 +188,21 @@ import UIKit
                     }
                 case .start:
                     if let request = command.request { start(request) }
+                case .lineBreak:
+                    guard state.phase == .listening, let owner = command.request, owner.id == state.request?.id,
+                          owner.focusID == state.request?.focusID, owner.documentID == state.request?.documentID else { break }
+                    if synthetic {
+                        syntheticParagraphs.append("")
+                        #if DEBUG && targetEnvironment(simulator)
+                        if ProcessInfo.processInfo.arguments.contains("--line-break-fixture"), syntheticParagraphs.count == 2 {
+                            syntheticParagraphs[1] = "次の予定を確認します。"
+                        }
+                        #endif
+                        try update { $0.preview = syntheticParagraphs.joined(separator: "\n") }
+                    } else if let active {
+                        let preview = active.insertLineBreak(at: command.createdAt)
+                        try update { $0.preview = preview }
+                    }
                 case .stop:
                     if let request = command.request, state.request?.id == request.id { finish() }
                 case .cancel:
@@ -269,7 +285,11 @@ import UIKit
                 if state.request?.id != request.id { try update { $0.finishWithoutDelivery(request.id) } }
                 return
             }
-            if synthetic { try? update { $0.preview = syntheticPhrase }; return }
+            if synthetic {
+                syntheticParagraphs = [syntheticPhrase]
+                try? update { $0.preview = syntheticPhrase }
+                return
+            }
             guard let capture = prepared else {
                 try update { $0.finishWithoutDelivery(request.id); $0.phase = .preparing }
                 Task { await rewarm() }; return
@@ -326,14 +346,17 @@ import UIKit
             guard let self else { return }
             defer { if self.generation == token { self.finishing = nil; self.processingCapture = nil } }
             do {
-                let raw: String
-                if self.synthetic { raw = self.syntheticPhrase }
-                else { raw = try await capture?.finish() ?? "" }
+                let paragraphs: [String]
+                if self.synthetic { paragraphs = self.syntheticParagraphs }
+                else { paragraphs = try await capture?.finish() ?? [] }
+                let raw = paragraphs.joined(separator: "\n")
                 IOSPreparationTrace.step("recognition.finished.characters=" + String(raw.count))
                 let finalized = Date()
                 guard !Task.isCancelled, self.generation == token, self.state.request?.id == request.id else { return }
                 let dictionary = self.state.settings.dictionary
-                var text = TextPipeline.process(raw, entries: dictionary, removeFillers: self.state.settings.removeFillers)
+                var lines = paragraphs.map {
+                    TextPipeline.process($0, entries: dictionary, removeFillers: self.state.settings.removeFillers)
+                }
                 let refinementStart = Date()
                 var refined = false
                 #if DEBUG && targetEnvironment(simulator)
@@ -341,13 +364,18 @@ import UIKit
                     try await Task.sleep(for: .seconds(4))
                 }
                 #endif
-                if self.state.settings.refineWithAppleIntelligence, OnDeviceRefiner.available, !text.isEmpty {
-                    let candidate = try? await OnDeviceRefiner.refine(text)
-                    guard !Task.isCancelled, self.state.request?.id == request.id else { return }
-                    if let candidate, TextPipeline.acceptsRefinement(original: text, candidate: candidate, dictionary: dictionary) {
-                        text = candidate; refined = true
+                if self.state.settings.refineWithAppleIntelligence, OnDeviceRefiner.available {
+                    for i in lines.indices where !lines[i].isEmpty {
+                        let original = lines[i]
+                        let candidate = try? await OnDeviceRefiner.refine(original)
+                        guard !Task.isCancelled, self.state.request?.id == request.id else { return }
+                        if let candidate, TextPipeline.acceptsRefinement(original: original, candidate: candidate, dictionary: dictionary) {
+                            lines[i] = candidate
+                            refined = true
+                        }
                     }
                 }
+                let text = lines.joined(separator: "\n")
                 let finished = Date()
                 let metrics = DictationMetrics(speechSeconds: max(0, request.stoppedAt!.timeIntervalSince(request.startedAt)),
                     finalizationMilliseconds: max(0, finalized.timeIntervalSince(request.stoppedAt!) * 1000),

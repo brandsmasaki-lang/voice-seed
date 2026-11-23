@@ -211,14 +211,6 @@ struct VoiceSeedSettings: View {
                 if model.state.sessionID != nil { Button("マイクを終了") { model.disconnect() } }
             } header: { Text("音声入力") } footer: { Text("音声から句読点・疑問符を自動で補います。文末のあとに約1.2秒以上の間があると改行します。音声認識・フィラー除去・任意の文章整形は、この端末内で行います。文章整形を使うと、その処理時間が加わります。") }
             Section("キーボード") {
-                if UIDevice.current.userInterfaceIdiom == .phone {
-                    Picker("キー配列", selection: Binding(
-                        get: { model.state.settings.phoneKeyboardLayout ?? .keypad },
-                        set: { value in model.updateSettings { $0.phoneKeyboardLayout = value } }
-                    )) {
-                        ForEach(PhoneKeyboardLayout.allCases, id: \.self) { Text($0.label).tag($0) }
-                    }
-                }
                 Picker("変換候補と操作ボタンの文字", selection: Binding(get: { model.state.settings.reviewTextSize ?? .large }, set: { value in
                     model.updateSettings { $0.reviewTextSize = value }
                 })) {
