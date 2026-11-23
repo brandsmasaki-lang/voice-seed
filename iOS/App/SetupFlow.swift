@@ -100,7 +100,7 @@ struct SetupFlow: View {
                 guide("直す範囲を矢印で調整", "語をタップすると黄色になります。←で末尾を1文字短く、→で長くできます。「先頭」「全体」に切り替えると、矢印で動かす部分が変わります。", label: "←　→")
             } else {
                 guide("もう一度タップして貼り付ける", "話し終わったら「終了して貼り付け」をタップ。文章が整うと、話し始めた入力欄に入ります。", label: "終了して貼り付け")
-                guide("前のかなに戻す", "「あ」を押しすぎて「う」になったら、↶ をタップすると「い」に戻ります。", label: "↶")
+                guide("前のかなに戻す", "「あ」を押しすぎて「う」になったら、丸い矢印をタップすると「い」に戻ります。", label: "前のかなに戻す", symbol: "arrow.counterclockwise")
             }
             guide("スペース長押しでカーソル移動", "押したまま左右に動かして、修正したい場所へ移動します。", label: "←　空白を長押し　→")
         case 4:
@@ -112,7 +112,7 @@ struct SetupFlow: View {
             prompt("佐藤さん、金曜日の16時に打ち合わせできますか。ご都合を教えてください。")
             practice(title: "メール")
         case 6:
-            title("思いついたことを、すぐ文字に。", subtitle: UIDevice.current.userInterfaceIdiom == .pad ? "貼り付ける前に直すときは「修正する」を押し、プレビューで語をタップします。" : "貼り付けた文章は、矢印でカーソルを動かして直せます。")
+            title("思いついたことを、すぐ文字に。", subtitle: UIDevice.current.userInterfaceIdiom == .pad ? "貼り付ける前に直すときは「修正する」を押し、プレビューで語をタップします。" : "「空白」を長押しして指を左右に動かすと、貼り付けた文章の直したい位置にカーソルを移せます。")
             prompt("今週末は、まず郵便局で荷物を受け取る。次に、19時に友人へ電話する。")
             practice(title: "メモ")
         default:
@@ -158,11 +158,17 @@ struct SetupFlow: View {
                 .frame(minHeight: 170).focused($fieldFocused).accessibilityIdentifier("setup-practice")
         }.padding(16).background(Color(uiColor: .secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 16))
     }
-    private func guide(_ title: String, _ text: String, label: String) -> some View {
+    private func guide(_ title: String, _ text: String, label: String, symbol: String? = nil) -> some View {
         VStack(alignment: .leading, spacing: 12) {
             Text(title).font(.headline)
             Text(text).font(.subheadline).foregroundStyle(.secondary)
-            Text(label).font(.system(size: 14, weight: .semibold))
+            Group {
+                if let symbol {
+                    Image(systemName: symbol).font(.system(size: 24, weight: .semibold)).accessibilityLabel(label)
+                } else {
+                    Text(label).font(.system(size: 14, weight: .semibold))
+                }
+            }
                 .padding(.vertical, 16).frame(maxWidth: .infinity)
                 .background(Color(uiColor: .systemGray4), in: RoundedRectangle(cornerRadius: 12))
         }.padding(18).frame(maxWidth: .infinity, alignment: .leading)

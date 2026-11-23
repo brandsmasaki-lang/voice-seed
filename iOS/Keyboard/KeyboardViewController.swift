@@ -283,12 +283,14 @@ final class KeyboardViewController: UIInputViewController {
         globe.widthAnchor.constraint(equalToConstant: 40).isActive = true
         bottomBar.addArrangedSubview(globe)
         bottomBar.spacing = 5
-        for (title, direction) in [("←", -1), ("→", 1)] {
-            let arrow = key(title, fontSize: 24) { [weak self] in self?.moveCursor(direction) }
-            arrow.widthAnchor.constraint(greaterThanOrEqualToConstant: 44).isActive = true
-            arrow.heightAnchor.constraint(equalToConstant: 44).isActive = true
-            arrow.accessibilityHint = isTablet ? "選択中は黄色の範囲を、通常はカーソルを1文字動かします" : "カーソルを1文字動かします"
-            bottomBar.addArrangedSubview(arrow)
+        if isTablet {
+            for (title, direction) in [("←", -1), ("→", 1)] {
+                let arrow = key(title, fontSize: 24) { [weak self] in self?.moveCursor(direction) }
+                arrow.widthAnchor.constraint(greaterThanOrEqualToConstant: 44).isActive = true
+                arrow.heightAnchor.constraint(equalToConstant: 44).isActive = true
+                arrow.accessibilityHint = "選択中は黄色の範囲を、通常はカーソルを1文字動かします"
+                bottomBar.addArrangedSubview(arrow)
+            }
         }
         selectionPart.selectedSegmentIndex = 0
         selectionPart.accessibilityLabel = "矢印で動かす部分"
@@ -1273,7 +1275,10 @@ final class KeyboardViewController: UIInputViewController {
         setMarked(); updateCandidates()
     }
     private func previousCharacterKey() -> UIButton {
-        let button = key("↶", fontSize: 28) { [weak self] in self?.reverseKana() }
+        let button = key("") { [weak self] in self?.reverseKana() }
+        let symbol = UIImage.SymbolConfiguration(pointSize: 24, weight: .semibold)
+        button.setImage(UIImage(systemName: "arrow.counterclockwise", withConfiguration: symbol), for: .normal)
+        button.tintColor = .label
         button.accessibilityLabel = mode == .kana ? "前のかなに戻す" : "前の文字に戻す"
         button.accessibilityHint = mode == .kana ? "例えば「う」を「い」に戻します" : "同じキーの一つ前の文字に戻します"
         button.isEnabled = tapCycle.canReverse(composer.reading.last.map(String.init))
