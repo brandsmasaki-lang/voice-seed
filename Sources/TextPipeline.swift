@@ -101,17 +101,26 @@ enum TextPipeline {
         return applyDictionary(cleaned, entries: entries)
     }
 
-    private static func isShortKana(_ reading: String) -> Bool {
-        !reading.isEmpty && reading.count <= 2 && reading.unicodeScalars.allSatisfy {
+    private static func isIdeograph(_ character: Character?) -> Bool {
+        character?.unicodeScalars.first?.properties.isIdeographic == true
+    }
+
+    private static func needsWordBoundary(_ reading: String) -> Bool {
+        if reading.count == 1 && isIdeograph(reading.first) { return true }
+        return !reading.isEmpty && reading.count <= 2 && reading.unicodeScalars.allSatisfy {
             (0x3041...0x3096).contains($0.value) || (0x30A1...0x30FA).contains($0.value) || $0.value == 0x30FC
         }
     }
 
-    // A two-kana abbreviation is useful as a written correction, but biasing the
+    private static func isDaiShortcut(_ entry: DictionaryEntry) -> Bool {
+        !entry.isVocabulary && entry.written == "DAI" && ["だい", "ダイ", "大"].contains(entry.heard)
+    }
+
+    // A short abbreviation is useful as a written correction, but biasing the
     // acoustic model with its spelling can turn an unrelated word into that name.
     static func recognitionVocabulary(_ entries: [DictionaryEntry], includingReadings: Bool = false) -> [String] {
         var hints = Set<String>()
-        for entry in entries where entry.isVocabulary || !isShortKana(entry.heard) {
+        for entry in entries where entry.isVocabulary || !needsWordBoundary(entry.heard) {
             hints.insert(entry.written)
             if includingReadings { hints.insert(entry.heard) }
         }
@@ -138,7 +147,7 @@ enum TextPipeline {
             }
         }
         if text.contains("版") || text.contains("ギフトバン") { collect(editionPair, replacement: "App版とGit版") }
-        if text.contains("切"), entries.contains(where: { ["だい", "ダイ"].contains($0.heard) && $0.written == "DAI" }) {
+        if text.contains("切"), entries.contains(where: isDaiShortcut) {
             collect(taisetsu, replacement: "大切")
         }
         var boundaries: Set<String.Index>?
@@ -163,8 +172,11 @@ enum TextPipeline {
         while cursor < text.endIndex {
             let entry = byFirstCharacter[text[cursor]]?.first(where: { entry in
                 guard text[cursor...].hasPrefix(entry.heard) else { return false }
-                guard isShortKana(entry.heard) else { return true }
+                guard needsWordBoundary(entry.heard) else { return true }
                 let end = text.index(cursor, offsetBy: entry.heard.count)
+                // A tokenizer can split a kanji prefix or suffix within one compound.
+                if entry.heard.count == 1, isIdeograph(entry.heard.first),
+                   isIdeograph(text[..<cursor].last) || isIdeograph(text[end...].first) { return false }
                 // Japanese tokenizers may split a misheard "だいせつ" into "だい" and "せつ".
                 if ["だい", "ダイ"].contains(entry.heard) && entry.written == "DAI" && (text[end...].hasPrefix("せつ") || text[end...].hasPrefix("セツ")) { return false }
                 return isWordRange(cursor..<end)
@@ -200,7 +212,7 @@ enum TextPipeline {
         // them to the model output would allow chained replacements and miss paraphrases.
         var protected = Set(dictionary.map(\.written))
         protected.insert("App版とGit版")
-        if dictionary.contains(where: { ["だい", "ダイ"].contains($0.heard) && $0.written == "DAI" }) {
+        if dictionary.contains(where: isDaiShortcut) {
             protected.insert("大切")
         }
         for term in protected where !term.isEmpty && original.contains(term) {

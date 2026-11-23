@@ -21,6 +21,14 @@ import Foundation
         precondition(DictionaryCorrection.apply(heard: "何か", written: "  ", to: &list) == .invalid && list.count == 2)
         let exported = try! JSONSerialization.jsonObject(with: DictionaryCorrection.exportData(list)) as! [String: [[String: String]]]
         precondition(exported["entries"]!.count == 2 && exported["entries"]!.contains { $0["kind"] == "vocabulary" && $0["written"] == "Aqua Voice" }, "Export keeps hints and replacements apart")
+        let singleKanji = [DictionaryEntry(heard: "大", written: "DAI")]
+        for (raw, expected) in [("大切な予定です。", "大切な予定です。"), ("大切にします。", "大切にします。"),
+                                ("拡大して大成功", "拡大して大成功"), ("大です", "DAIです"), ("大", "DAI"),
+                                ("DAI切な予定", "大切な予定")] {
+            precondition(TextPipeline.process(raw, entries: singleKanji, removeFillers: false) == expected, raw)
+        }
+        precondition(TextPipeline.recognitionVocabulary(singleKanji, includingReadings: true).isEmpty)
+        precondition(!TextPipeline.acceptsRefinement(original: "大切です", candidate: "DAI切です", dictionary: singleKanji))
         let dai = DictionaryEntry(heard: "だい", written: "DAI")
         for (spoken, expected) in [
             ("だいです", "DAIです"), ("だい", "DAI"), ("だいぶ大切です", "だいぶ大切です"),

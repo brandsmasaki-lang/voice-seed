@@ -492,7 +492,7 @@ struct DictionaryView: View {
                     ContentUnavailableView("単語を登録しましょう", systemImage: "character.book.closed", description: Text("登録した単語は、このMacだけに保存されます。"))
                 }
             }
-            Text("読みがかな1〜2文字のときは、単語の区切りに合う場合だけ置き換えます。")
+            Text("かな1〜2文字や漢字1文字の登録は、単語の区切りで置き換えます。")
                 .font(.system(size: 10)).foregroundStyle(.secondary)
         }.padding(.horizontal, 32).padding(.bottom, 24)
             .sheet(item: $model.pendingDictionaryImport) { preview in DictionaryImportView(model: model, preview: preview) }
