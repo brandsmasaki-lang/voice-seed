@@ -7,10 +7,40 @@ import ApplicationServices
     private var tap: CFMachPort?
     private var source: CFRunLoopSource?
     private var state = FnKeyState()
+    private let secureInputEnabled: () -> Bool
+    private var inputProtected = false
     var onPress: (() -> Void)?
     var onRelease: (() -> Void)?
     var onInterrupted: (() -> Void)?
     var onKeyboardChord: (() -> Void)?
+    var onInputProtectionChanged: ((Bool) -> Void)?
+
+    init(secureInputEnabled: @escaping () -> Bool = { IsSecureEventInputEnabled() }) {
+        self.secureInputEnabled = secureInputEnabled
+    }
+
+    // macOS may withhold every key event, including the release that ends a hold.
+    // The regular readiness refresh must observe protection even with no events.
+    @discardableResult func refreshInputProtection() -> Bool {
+        let active = secureInputEnabled()
+        if active != inputProtected {
+            inputProtected = active
+            if active { interruptHold() }
+            onInputProtectionChanged?(active)
+        }
+        return active
+    }
+
+    private func interruptHold() {
+        let eventHold = state.reset()
+        #if APP_STORE
+        let pollingHold = sampledHold.recording
+        sampledHold = SampledFnHold()
+        if eventHold || pollingHold { onInterrupted?() }
+        #else
+        if eventHold { onInterrupted?() }
+        #endif
+    }
     #if APP_STORE
     private var modifierTimer: Timer?
     private var sampledHold = SampledFnHold()
@@ -24,14 +54,15 @@ import ApplicationServices
         return flagsAge < upAge && upAge < downAge
     }
 
-    private func sampleModifiers() {
-        let flags = CGEventSource.flagsState(.combinedSessionState)
+    func sampleModifiers(readFlags: () -> CGEventFlags = { CGEventSource.flagsState(.combinedSessionState) },
+                         readKeyDownCount: () -> UInt32 = { CGEventSource.counterForEventType(.combinedSessionState, eventType: .keyDown) }) {
+        guard !refreshInputProtection() else { return }
+        let flags = readFlags()
         let fn = flags.contains(.maskSecondaryFn)
         let action = sampledHold.sample(
             fn: fn,
             otherModifier: !flags.intersection([.maskCommand, .maskShift, .maskControl, .maskAlternate]).isEmpty,
-            keyDownCount: CGEventSource.counterForEventType(.combinedSessionState, eventType: .keyDown),
-            secureInput: (fn || sampledHold.recording) && IsSecureEventInputEnabled(),
+            keyDownCount: readKeyDownCount(),
             typingEndedBeforeFn: typingEndedBeforeFn())
         switch action {
         case .pressed: onPress?()
@@ -43,6 +74,7 @@ import ApplicationServices
     #endif
 
     @discardableResult func start() -> Bool {
+        refreshInputProtection()
         #if APP_STORE
         // With Input Monitoring, flagsChanged preserves the ordering between typing
         // and Fn. Keep polling available on Macs with only paste permission.
@@ -97,18 +129,14 @@ import ApplicationServices
         return true
     }
 
-    private func receive(type: CGEventType, event: CGEvent) {
+    func receive(type: CGEventType, event: CGEvent) {
         if type == .tapDisabledByTimeout || type == .tapDisabledByUserInput {
-            if state.reset() { onInterrupted?() }
+            refreshInputProtection()
+            interruptHold()
             if let tap { CGEvent.tapEnable(tap: tap, enable: true) }
             return
         }
-        #if APP_STORE
-        if IsSecureEventInputEnabled() {
-            if state.reset() { onInterrupted?() }
-            return
-        }
-        #endif
+        guard !refreshInputProtection() else { return }
         if type == .keyDown {
             // Observe only whether a key was pressed during Fn. Never extract typed text or its key code.
             if state.usedWithKey() == .keyboardChord { onKeyboardChord?() }
@@ -130,10 +158,8 @@ import ApplicationServices
         #if APP_STORE
         modifierTimer?.invalidate()
         modifierTimer = nil
-        if sampledHold.recording { onInterrupted?() }
-        sampledHold = SampledFnHold()
         #endif
-        if state.reset() { onInterrupted?() }
+        interruptHold()
         if let source { CFRunLoopRemoveSource(CFRunLoopGetMain(), source, .commonModes) }
         if let tap { CFMachPortInvalidate(tap) }
         source = nil; tap = nil

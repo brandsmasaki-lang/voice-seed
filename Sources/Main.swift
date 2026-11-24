@@ -37,8 +37,9 @@ import FoundationModels
                 UpdateMenuItem(model: model, updater: model.updater)
             }
         }
-        MenuBarExtra("こえのたね", systemImage: model.phase == .recording ? "mic.fill" : "waveform") {
+        MenuBarExtra("こえのたね", systemImage: model.phase == .recording ? "mic.fill" : model.fnPaused ? "lock.fill" : "waveform") {
             Text(model.phase == .idle ? "こえのたね" : model.phase.title)
+            if let message = model.fnProtectionMessage { Text(message) }
             Button(model.phase == .recording ? "音声入力を終了" : "音声入力を開始") { model.toggle(fromShortcut: true) }
                 .disabled(model.busy && model.phase != .recording)
             if model.phase == .recording { Button("音声入力をキャンセル") { model.cancel() } }
@@ -80,11 +81,14 @@ import FoundationModels
         fn.onRelease = { [weak model] in model?.fnReleased() }
         fn.onInterrupted = { [weak model] in model?.fnInterrupted() }
         fn.onKeyboardChord = { [weak model] in model?.fnUsedWithAnotherKey() }
+        fn.onInputProtectionChanged = { [weak model] in model?.fnInputProtectionChanged($0) }
         model.fnMonitor = fn
         model.refreshInputPermissions()
-        permissionTimer = Timer.scheduledTimer(withTimeInterval: 2, repeats: true) { [weak model] _ in
+        let timer = Timer(timeInterval: 2, repeats: true) { [weak model] _ in
             Task { @MainActor in model?.refreshInputPermissions() }
         }
+        RunLoop.main.add(timer, forMode: .common)
+        permissionTimer = timer
         sleepObserver = NSWorkspace.shared.notificationCenter.addObserver(forName: NSWorkspace.willSleepNotification, object: nil, queue: .main) { [weak model] _ in
             MainActor.assumeIsolated { model?.prepareForSleep() }
         }

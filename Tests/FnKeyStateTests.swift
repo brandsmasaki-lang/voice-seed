@@ -33,8 +33,8 @@ import Foundation
         precondition(recording.release(recordingStarted: true) == .stop)
         precondition(recording.release(recordingStarted: true) == nil, "Only one stop per hold")
         var sampled = SampledFnHold()
-        func sample(_ fn: Bool, _ count: UInt32, modifier: Bool = false, secure: Bool = false) -> FnKeyState.Action? {
-            sampled.sample(fn: fn, otherModifier: modifier, keyDownCount: count, secureInput: secure)
+        func sample(_ fn: Bool, _ count: UInt32, modifier: Bool = false) -> FnKeyState.Action? {
+            sampled.sample(fn: fn, otherModifier: modifier, keyDownCount: count)
         }
         precondition(sample(true, 0) == nil, "Opening with Fn already held must not start recording")
         precondition(sample(false, 0) == nil)
@@ -48,18 +48,11 @@ import Foundation
         precondition(sample(true, 2, modifier: true) == nil)
         precondition(sample(true, 2) == nil, "Releasing a modifier with Fn still down must not start")
         precondition(sample(false, 2) == nil)
-        precondition(sample(true, 2, secure: true) == nil)
-        precondition(sample(false, 2) == nil)
-        precondition(sample(true, 2) == .pressed)
-        precondition(sample(true, 2, secure: true) == .keyboardChord)
-        precondition(sample(false, 2) == nil)
-        precondition(sampled.sample(fn: true, otherModifier: false, keyDownCount: 3, secureInput: false,
+        precondition(sampled.sample(fn: true, otherModifier: false, keyDownCount: 3,
                                     typingEndedBeforeFn: true) == .pressed, "Typing and releasing a key just before Fn must start dictation")
-        precondition(sampled.sample(fn: true, otherModifier: false, keyDownCount: 4, secureInput: false,
+        precondition(sampled.sample(fn: true, otherModifier: false, keyDownCount: 4,
                                     typingEndedBeforeFn: true) == .keyboardChord, "Typing during an active hold still cancels")
         precondition(sample(false, 4) == nil)
-        precondition(sampled.sample(fn: true, otherModifier: false, keyDownCount: 5, secureInput: true,
-                                    typingEndedBeforeFn: true) == nil, "Secure input still blocks a fresh hold")
         print("PASS: Fn event, modifier sample and recording lifecycle checks")
     }
 }

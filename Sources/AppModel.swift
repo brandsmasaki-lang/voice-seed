@@ -21,6 +21,18 @@ enum RecordingPhase: String {
     }
 }
 
+enum FnInputProtection {
+    case clear, active, lifted
+
+    var message: String? {
+        switch self {
+        case .clear: return nil
+        case .active: return "Macがキーボード入力を保護しています。Fnは一時停止中です。"
+        case .lifted: return "Macのキーボード入力保護が解除されました。"
+        }
+    }
+}
+
 @MainActor final class AppModel: NSObject, ObservableObject {
     let publicInfo = PublicInfoStore()
     let updater = AppUpdateController()
@@ -44,6 +56,9 @@ enum RecordingPhase: String {
         didSet { UserDefaults.standard.set(fnEnabled, forKey: "fnEnabled"); refreshInputPermissions() }
     }
     @Published var fnReady = false
+    @Published private(set) var fnProtection = FnInputProtection.clear
+    var fnProtectionMessage: String? { fnEnabled ? fnProtection.message : nil }
+    var fnPaused: Bool { fnEnabled && fnProtection == .active }
     @Published var pasteReady = false
     /// True when a permission granted to an earlier build no longer applies to this one.
     /// System Settings still shows the switch as on in that state, which users cannot diagnose.
@@ -215,7 +230,13 @@ enum RecordingPhase: String {
         NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.Keyboard-Settings.extension")!)
     }
 
+    func fnInputProtectionChanged(_ active: Bool) {
+        fnProtection = active ? .active : .lifted
+    }
+
     func fnPressed() {
+        guard !fnPaused else { return }
+        if fnProtection == .lifted { fnProtection = .clear }
         fnLastEvent = "Fn を押しています。"
         let ownSettingsFrontmost = ["設定", "アプリについて"].contains(selectedTab)
             && NSWorkspace.shared.frontmostApplication?.processIdentifier == ProcessInfo.processInfo.processIdentifier

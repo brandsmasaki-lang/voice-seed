@@ -94,7 +94,7 @@ struct MainView: View {
     private var input: some View {
         VStack(spacing: 0) {
             Text(model.phase.title).font(.system(size: 27, weight: .semibold)).tracking(-0.6)
-            Text(model.phase == .idle ? (model.needsInputSetup ? "下の準備状況を確認してください。設定画面へ移動せずに準備できます。" : model.fnEnabled ? "入力先で Fn を押しながら話し、離すと入力できます。" : "思いついたことを、そのまま話してください。") : model.phase == .recording ? (model.recordingFromFn ? (model.canAutomaticallyPaste ? "Fn を離すと、文字起こしして元の入力欄に貼り付けます。" : "Fn を離すと、認識結果をこのアプリに表示します。") : "もう一度ボタンを押すと、音声入力を終了します。") : "音声は外部に送信せず、このMacで処理しています。")
+            Text(model.phase == .idle ? idleInputHint : model.phase == .recording ? (model.recordingFromFn ? (model.canAutomaticallyPaste ? "Fn を離すと、文字起こしして元の入力欄に貼り付けます。" : "Fn を離すと、認識結果をこのアプリに表示します。") : "もう一度ボタンを押すと、音声入力を終了します。") : "音声は外部に送信せず、このMacで処理しています。")
                 .font(.system(size: 12)).foregroundStyle(.secondary).padding(.top, 8)
             if model.phase == .idle {
                 if model.needsInputSetup { InputSetupView(model: model).padding(.top, 15) }
@@ -132,7 +132,7 @@ struct MainView: View {
                     Label("この出力先では再生音を消せません。", systemImage: "speaker.wave.2")
                         .font(.system(size: 11)).foregroundStyle(.secondary)
                 }
-            } else {
+            } else if !model.fnPaused {
                 HStack(spacing: 8) {
                     Text(model.fnEnabled ? "入力先で長押し" : "クリック、または").foregroundStyle(.secondary)
                     Text(model.fnEnabled ? "Fn / 🌐" : model.shortcutLabel).font(.system(size: 11, weight: .medium, design: .monospaced))
@@ -180,6 +180,12 @@ struct MainView: View {
                 .font(.system(size: 11)).buttonStyle(.plain).foregroundStyle(green).padding(.top, 9)
         }.padding(.horizontal, 32).padding(.bottom, 22)
     }
+
+    private var idleInputHint: String {
+        if model.needsInputSetup { return "下の準備状況を確認してください。設定画面へ移動せずに準備できます。" }
+        if model.fnPaused { return "この画面のマイクをクリックすると音声入力できます。" }
+        return model.fnEnabled ? "入力先で Fn を押しながら話し、離すと入力できます。" : "思いついたことを、そのまま話してください。"
+    }
 }
 
 struct InputSetupView: View {
@@ -187,6 +193,7 @@ struct InputSetupView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 9) {
             Label("音声入力の準備", systemImage: "checklist").font(.system(size: 12, weight: .semibold))
+            if model.fnPaused, let message = model.fnProtectionMessage { Label(message, systemImage: "lock.fill") }
             if !model.modelReady {
                 HStack {
                     VStack(alignment: .leading, spacing: 3) {
@@ -270,12 +277,17 @@ struct InputReadyView: View {
     @ObservedObject var model: AppModel
     var body: some View {
         HStack(spacing: 10) {
-            Image(systemName: "checkmark.seal.fill").font(.system(size: 20)).foregroundStyle(green)
+            Image(systemName: model.fnPaused ? "lock.fill" : "checkmark.seal.fill").font(.system(size: 20)).foregroundStyle(green)
             VStack(alignment: .leading, spacing: 3) {
-                Text("これで使えます！").font(.system(size: 13, weight: .semibold)).foregroundStyle(green)
-                Text((["日本語モデル", "マイク"] + (model.fnEnabled ? ["Fnキーの検知"] : []) + (model.autoPaste ? ["自動貼り付け"] : []))
-                    .map { "✓ " + $0 }.joined(separator: "　"))
-                    .font(.system(size: 10)).foregroundStyle(.secondary)
+                Text(model.fnProtectionMessage ?? "これで使えます！").font(.system(size: 13, weight: .semibold)).foregroundStyle(green)
+                if model.fnPaused {
+                    Text("パスワード入力などを終え、通常の入力欄でFnを押し直してください。")
+                        .font(.system(size: 12)).foregroundStyle(.secondary)
+                } else {
+                    Text((["日本語モデル", "マイク"] + (model.fnEnabled ? ["Fnキーの検知"] : []) + (model.autoPaste ? ["自動貼り付け"] : []))
+                        .map { "✓ " + $0 }.joined(separator: "　"))
+                        .font(.system(size: 10)).foregroundStyle(.secondary)
+                }
             }
             Spacer()
         }
@@ -517,7 +529,13 @@ struct SettingsView: View {
                     Text("入力したい欄をクリックし、Fnを押しながら話してください。離すと文字起こしして、その欄へ自動で貼り付けます。")
                         .font(.system(size: 11)).foregroundStyle(.secondary).lineSpacing(4)
                     HStack {
-                        Label(model.fnReady ? "① Fnキーの検知：準備完了" : "① Fnキーの検知：許可が必要", systemImage: model.fnReady ? "checkmark.circle.fill" : "circle")
+                        if model.fnPaused {
+                            Label("① Fnキーの検知：入力保護のため一時停止中", systemImage: "lock.fill")
+                        } else if !model.fnEnabled {
+                            Label("① Fnキーの検知：オフ", systemImage: "circle")
+                        } else {
+                            Label(model.fnReady ? "① Fnキーの検知：準備完了" : "① Fnキーの検知：許可が必要", systemImage: model.fnReady ? "checkmark.circle.fill" : "circle")
+                        }
                         Spacer()
                         if !AppDistribution.isAppStore || (!model.autoPaste && !model.fnReady) {
                             Button("入力監視の設定を開く") { model.requestFnPermission() }
@@ -535,7 +553,7 @@ struct SettingsView: View {
                     Text("Macのキーボード設定で「🌐キーを押して実行する操作」を「何もしない」にしてください。同じFnキーを使うAqua Voiceは、試す間は終了してください。")
                         .font(.system(size: 11)).foregroundStyle(.secondary).lineSpacing(4)
                     Button("Macのキーボード設定を開く") { model.openKeyboardSettings() }
-                    Text(model.fnLastEvent).font(.system(size: 11, weight: .medium)).foregroundStyle(green)
+                    if model.fnEnabled { Text(model.fnProtectionMessage ?? model.fnLastEvent).font(.system(size: 11, weight: .medium)).foregroundStyle(green) }
                     Text("この設定画面ではFnを押しても音声入力しません。キーの検出だけを確認できます。Fnとの組み合わせだけを検出し、入力した文字は取得・保存しません。")
                         .font(.system(size: 10)).foregroundStyle(.secondary)
                     Button("入力画面で試す") { model.selectedTab = "入力"; model.refreshInputPermissions() }

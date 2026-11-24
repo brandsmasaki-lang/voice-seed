@@ -1,5 +1,6 @@
 import Foundation
 import FoundationModels
+import CoreGraphics
 
 @main struct AppStartupIntegrationTests {
     @MainActor static func main() async {
@@ -90,6 +91,64 @@ import FoundationModels
         model.fnUsedWithAnotherKey()
         check(model.notice.isEmpty && model.backgroundNotice.isEmpty, "Fn keyboard chords dismiss notifications silently")
         check(windowPresentations == windowsBeforeEmptyInput, "Fn Delete cannot activate the main window")
-        print("PASS: \(checks) AppModel fresh-install integration checks (synthetic assets; no microphone recording)")
+        var protected = false
+        let monitor = FnKeyMonitor(secureInputEnabled: { protected })
+        var transitions: [Bool] = []
+        var events: [String] = []
+        monitor.onInputProtectionChanged = {
+            transitions.append($0)
+            model.fnInputProtectionChanged($0)
+        }
+        monitor.onPress = { events.append("press"); model.fnPressed() }
+        monitor.onRelease = { events.append("release"); model.fnReleased() }
+        monitor.onInterrupted = { events.append("interrupt"); model.fnInterrupted() }
+        func fnEvent(down: Bool) {
+            let event = CGEvent(keyboardEventSource: nil, virtualKey: 63, keyDown: down)!
+            event.flags = down ? [.maskSecondaryFn] : []
+            monitor.receive(type: .flagsChanged, event: event)
+        }
+        model.modelReady = true
+        model.microphoneStatus = .authorized
+        model.fnReady = true
+        model.pasteReady = true
+        fnEvent(down: true)
+        check(model.phase == .preparing && model.recordingFromFn, "An ordinary Fn press starts recording preparation")
+        protected = true
+        monitor.refreshInputProtection() // No key-up or any other event was delivered.
+        monitor.refreshInputProtection()
+        check(events == ["press", "interrupt"] && transitions == [true], "Entering protection without a release interrupts exactly once")
+        check(model.fnPaused && model.fnProtectionMessage != nil, "Input protection has actionable status even when no key arrives")
+        check(model.phase == .idle && !model.needsInputSetup, "A lost release ends preparation without requesting permissions again")
+        fnEvent(down: false); fnEvent(down: true)
+        check(events == ["press", "interrupt"], "Protected events never trigger recording or paste")
+        model.toggle()
+        check(model.phase == .preparing && !model.recordingFromFn, "The in-app microphone remains usable during protection")
+        protected = false
+        monitor.refreshInputProtection()
+        fnEvent(down: false) // Release of a key held across the transition cannot paste.
+        check(!model.fnPaused && model.fnProtection == .lifted && transitions == [true, false], "Recovery is automatic and leaves the reason visible")
+        check(events == ["press", "interrupt"], "Recovery itself cannot start or finalize a recording")
+        check(model.phase == .preparing, "Lifting protection leaves a manually started recording alone")
+        model.cancel()
+        fnEvent(down: true)
+        check(model.phase == .preparing && model.recordingFromFn, "The first fresh press starts preparation again")
+        fnEvent(down: false)
+        check(model.fnProtectionMessage == nil && events.suffix(2) == ["press", "release"], "First fresh Fn works and clears the recovery message")
+        #if APP_STORE
+        events.removeAll()
+        func poll(_ down: Bool) {
+            monitor.sampleModifiers(readFlags: { down ? [.maskSecondaryFn] : [] }, readKeyDownCount: { 0 })
+        }
+        poll(false); poll(true)
+        protected = true
+        monitor.sampleModifiers(readFlags: { preconditionFailure("Protected modifiers must not be read") },
+                                readKeyDownCount: { preconditionFailure("Protected keyboard activity must not be read") })
+        protected = false
+        poll(true); poll(false)
+        check(events == ["press", "interrupt"], "Polling ignores the held Fn across protection")
+        poll(true); poll(false)
+        check(events == ["press", "interrupt", "press", "release"], "Polling recovers on the next fresh hold")
+        #endif
+        print("PASS: \(checks) AppModel integration checks (synthetic assets and Fn events; no microphone recording)")
     }
 }

@@ -40,11 +40,11 @@ struct SampledFnHold {
     private(set) var recording = false
 
     mutating func sample(fn: Bool, otherModifier: Bool, keyDownCount: UInt32,
-                         secureInput: Bool, typingEndedBeforeFn: @autoclosure () -> Bool = false) -> FnKeyState.Action? {
+                         typingEndedBeforeFn: @autoclosure () -> Bool = false) -> FnKeyState.Action? {
         defer { previousFn = fn; previousKeyDownCount = keyDownCount }
         guard let previousFn else { return nil }
         let chord = otherModifier || previousKeyDownCount != keyDownCount
-        if recording && (chord || secureInput) {
+        if recording && chord {
             recording = false
             return .keyboardChord
         }
@@ -52,7 +52,7 @@ struct SampledFnHold {
             recording = false
             return .released
         }
-        if fn && !previousFn && !otherModifier && !secureInput,
+        if fn && !previousFn && !otherModifier,
            previousKeyDownCount == keyDownCount || typingEndedBeforeFn() {
             recording = true
             return .pressed
